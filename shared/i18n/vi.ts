@@ -148,6 +148,18 @@ const vi = {
     productSearch: 'Tìm sản phẩm',
     priceTierLabel: 'Loại giá',
     priceTierHint: 'Loại giá áp dụng cho sản phẩm thêm mới.',
+    tierRetail: 'Bán lẻ',
+    tierWholesale: 'Sỉ',
+    tierDealer: 'Đại lý',
+    tierChangeConfirm: 'Áp dụng cho toàn bộ sản phẩm trong giỏ?',
+    customPrice: 'Giá chỉnh tay',
+    resetToTier: 'Reset về giá tier',
+    itemRemoved: 'Đã xoá',
+    undo: 'Hoàn tác',
+    owing: 'Còn thiếu',
+    discountAmount: 'Giảm tiền',
+    discountPercent: 'Giảm %',
+    invoiceCreated: 'Đã tạo hoá đơn',
   },
 
   // Invoice items / Cart

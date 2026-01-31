@@ -11,23 +11,30 @@ type SetupStep = 'enter' | 'confirm';
 
 export default function SetupPage() {
   const router = useRouter();
-  const { isLoading, checkHasUsers, hasUsers } = useAuth();
+  const { isLoading, checkHasUsers, hasUsers, hasBin } = useAuth();
   const [step, setStep] = useState<SetupStep>('enter');
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Redirect to BIN setup if no BIN configured
+  useEffect(() => {
+    if (!isLoading && hasBin === false) {
+      router.push('/bin-setup');
+    }
+  }, [isLoading, hasBin, router]);
+
   // Redirect to login if users already exist
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && hasBin === true) {
       checkHasUsers().then((exists) => {
         if (exists) {
           router.push('/login');
         }
       });
     }
-  }, [isLoading, checkHasUsers, router]);
+  }, [isLoading, hasBin, checkHasUsers, router]);
 
   const currentPin = step === 'enter' ? pin : confirmPin;
   const setCurrentPin = step === 'enter' ? setPin : setConfirmPin;
@@ -129,7 +136,7 @@ export default function SetupPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentPin.length, step, submitting, handleNumberClick, handleBackspace, handleNext, handleSubmit, handleBack, handleClear]);
 
-  if (isLoading || hasUsers === null) {
+  if (isLoading || hasBin === null || hasUsers === null) {
     return (
       <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow-lg text-center">
         <div className="text-slate-500">Đang tải...</div>

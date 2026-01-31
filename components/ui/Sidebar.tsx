@@ -16,21 +16,29 @@ export default function Sidebar() {
     );
 
   return (
-    <nav className="w-64 border-r border-slate-200 bg-white p-4">
-      <ul className="space-y-1">
-        <li>
-          <Link href="/" className={linkClass('/')}>Dashboard</Link>
-        </li>
-        <li>
-          <Link href="/customers" className={linkClass('/customers')}>Khách hàng</Link>
-        </li>
-        <li>
-          <Link href="/products" className={linkClass('/products')}>Sản phẩm</Link>
-        </li>
-        <li>
-          <Link href="/invoices" className={linkClass('/invoices')}>Hóa đơn</Link>
-        </li>
-      </ul>
+    <nav className="flex h-full flex-col">
+      {/* Logo */}
+      <div className="flex h-16 items-center border-b border-slate-200 px-4">
+        <span className="text-xl font-bold text-blue-600">POS System</span>
+      </div>
+
+      {/* Navigation */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <ul className="space-y-1">
+          <li>
+            <Link href="/" className={linkClass('/')}>Dashboard</Link>
+          </li>
+          <li>
+            <Link href="/customers" className={linkClass('/customers')}>Khách hàng</Link>
+          </li>
+          <li>
+            <Link href="/products" className={linkClass('/products')}>Sản phẩm</Link>
+          </li>
+          <li>
+            <Link href="/invoices" className={linkClass('/invoices')}>Hóa đơn</Link>
+          </li>
+        </ul>
+      </div>
     </nav>
   );
 }

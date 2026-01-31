@@ -40,12 +40,12 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="app-shell">
-      <Navbar />
-      <div className="app-body">
-        <aside className="app-sidebar">
-          <Sidebar />
-        </aside>
+    <div className="app-layout">
+      <aside className="app-sidebar">
+        <Sidebar />
+      </aside>
+      <div className="app-content">
+        <Navbar />
         <main className="app-main">{children}</main>
       </div>
     </div>

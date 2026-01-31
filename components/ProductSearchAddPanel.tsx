@@ -70,15 +70,9 @@ export function ProductSearchAddPanel({
   const allActiveProducts = useLiveQuery(
     async () => {
       try {
-        // Get all products first to debug
         const all = await db.products.toArray();
-        console.log('Total products in DB:', all.length);
-        console.log('Sample product:', all[0]);
-        
         // Filter by active (boolean)
         const active = all.filter(p => p.active === true);
-        
-        console.log('Active products:', active.length);
         return active;
       } catch (error) {
         console.error('Error loading products:', error);
@@ -134,10 +128,8 @@ export function ProductSearchAddPanel({
     setFeedbackMessage(`Đã thêm: ${product.name}`);
     setTimeout(() => setFeedbackMessage(null), 2000);
     
-    // Focus back to search input
-    if (searchInputRef?.current) {
-      searchInputRef.current.focus();
-    }
+    // NOTE: Do not focus back to search input here, 
+    // because page.tsx focuses the qty input of the new item
   };
 
   // Keyboard navigation

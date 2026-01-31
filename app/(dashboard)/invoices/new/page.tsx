@@ -1,47 +1,30 @@
-"use client";
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+'use client';
+
+import { useRef, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db';
 import { invoiceRepo } from '@/repos/invoiceRepo';
-import { formatCurrency } from '@/utils/formatters';
 import { ProductSearchAddPanel } from '@/components/ProductSearchAddPanel';
 import { vi } from '@/shared/i18n/vi';
-import type { Customer, Product, CartLine, PriceTier } from '@/domain/models';
+import { formatCurrency } from '@/utils/formatters';
+import type { Product, Customer } from '@/domain/models';
 
-/**
- * Get price by tier with fallback
- */
-function getPriceByTier(product: Product, tier: PriceTier): number {
-  const price = product[tier];
-  if (price !== null) return price;
-  return product.price1 ?? product.price2 ?? product.price3 ?? 0;
-}
+import { useInvoiceForm } from './hooks/useInvoiceForm';
+import { PriceTierSwitch } from './components/PriceTierSwitch';
+import { CartTable } from './components/CartTable';
+import { PaymentSummary } from './components/PaymentSummary';
+import { ToastContainer, showToast } from './components/Toast';
 
 export default function InvoiceNewPage() {
   const router = useRouter();
-
-  // Form state
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
-
-  const [globalPriceTier, setGlobalPriceTier] = useState<PriceTier>('price1');
-
-  const [cartLines, setCartLines] = useState<CartLine[]>([]);
-  const [discount, setDiscount] = useState(0);
-  const [paid, setPaid] = useState(0);
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Refs for keyboard shortcuts
   const productSearchInputRef = useRef<HTMLInputElement>(null);
+  const form = useInvoiceForm();
 
-  // Customer search query
+  // Customer search query (kept from original page logic)
   const customers = useLiveQuery(async () => {
-    const term = customerSearch.trim().toLowerCase();
+    const term = form.customerSearch.trim().toLowerCase();
     if (!term) {
       return db.customers.orderBy('name').limit(10).toArray();
     }
@@ -50,60 +33,54 @@ export default function InvoiceNewPage() {
       c.name.toLowerCase().includes(term) ||
       (c.phone && c.phone.includes(term))
     ).slice(0, 10);
-  }, [customerSearch]);
+  }, [form.customerSearch]);
 
-  // Calculated totals
-  const subtotal = useMemo(
-    () => cartLines.reduce((sum, line) => sum + line.lineTotal, 0),
-    [cartLines]
-  );
-  const total = subtotal - discount;
-  const change = paid - total;
-  const debtIncrease = Math.max(0, total - paid);
-  const hasDebt = debtIncrease > 0 && selectedCustomer !== null;
+  // Handle add to cart + focus qty
+  const handleAddToCart = useCallback((product: Product) => {
+    // Determine if we need to set the price tier for the new item
+    // The hook handles adding with current priceTier
+    form.addToCart(product);
+    form.focusQtyInput(product.id);
+  }, [form]);
 
-  // Cart product IDs for exclusion hint
-  const cartProductIds = useMemo(
-    () => new Set(cartLines.map((line) => line.productId)),
-    [cartLines]
-  );
+  // Handle remove with toast+undo
+  const handleRemove = useCallback((index: number) => {
+    const line = form.cartLines[index];
+    form.removeLine(index);
+    showToast(`Đã xoá: ${line.productName}`, {
+      label: 'Hoàn tác',
+      onClick: () => form.undoRemove(),
+    });
+  }, [form]);
 
-  const canSave = cartLines.length > 0 && !saving;
-
-  // Save invoice handler (wrapped in useCallback for useEffect dependency)
+  // Handle save
   const handleSave = useCallback(async () => {
-    setError(null);
+    form.setError(null);
 
-    if (cartLines.length === 0) {
-      setError(vi.validation.atLeastOneItem);
+    if (form.cartLines.length === 0) {
+      form.setError(vi.validation.atLeastOneItem);
       return;
     }
 
-    if (discount < 0) {
-      setError(vi.validation.discountNonNegative);
-      return;
-    }
-
-    if (paid < 0) {
-      setError(vi.validation.paidNonNegative);
-      return;
-    }
-
-    setSaving(true);
+    form.setSaving(true);
     try {
       const invoice = await invoiceRepo.create({
-        customerId: selectedCustomer?.id ?? null,
-        lines: cartLines,
-        discount,
-        paid,
-        note: note.trim() || undefined,
+        customerId: form.customer?.id ?? null,
+        lines: form.cartLines,
+        discount: form.discountAmount,
+        paid: form.paid,
+        note: form.note.trim() || undefined,
       });
-      router.push(`/invoices/${invoice.id}`);
+
+      showToast(`Đã tạo hoá đơn ${invoice.invoiceNo}`);
+      form.resetForm();
+      productSearchInputRef.current?.focus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : vi.validation.invalidValue);
-      setSaving(false);
+      form.setError(err instanceof Error ? err.message : vi.validation.invalidValue);
+    } finally {
+      form.setSaving(false);
     }
-  }, [cartLines, discount, paid, note, selectedCustomer, router]);
+  }, [form, router]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -117,7 +94,7 @@ export default function InvoiceNewPage() {
       // Ctrl+Enter or Cmd+Enter: Save invoice
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
-        if (canSave) {
+        if (form.cartLines.length > 0 && !form.saving) {
           handleSave();
         }
       }
@@ -125,163 +102,58 @@ export default function InvoiceNewPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canSave, handleSave]);
+  }, [form.cartLines.length, form.saving, handleSave]);
+
+  const canSave = form.cartLines.length > 0 && !form.saving;
 
   // Customer handlers
   const handleSelectCustomer = (customer: Customer | null) => {
-    setSelectedCustomer(customer);
-    setShowCustomerDropdown(false);
-    setCustomerSearch('');
+    form.setCustomer(customer);
+    form.setShowCustomerDropdown(false);
+    form.setCustomerSearch('');
   };
 
   const handleClearCustomer = () => {
-    setSelectedCustomer(null);
+    form.setCustomer(null);
   };
-
-  // Product handlers
-  const handleAddToCart = (product: Product) => {
-    const existingIndex = cartLines.findIndex(
-      (line) => line.productId === product.id
-    );
-
-    if (existingIndex >= 0) {
-      // Increment qty
-      const updated = [...cartLines];
-      updated[existingIndex] = {
-        ...updated[existingIndex],
-        qty: updated[existingIndex].qty + 1,
-        lineTotal:
-          (updated[existingIndex].qty + 1) * updated[existingIndex].unitPrice,
-      };
-      setCartLines(updated);
-    } else {
-      // Add new line with global price tier
-      const selectedPrice = getPriceByTier(product, globalPriceTier);
-      const newLine: CartLine = {
-        productId: product.id,
-        productName: product.name,
-        category: product.category,
-        unit: product.unit,
-        qty: 1,
-        unitPrice: selectedPrice,
-        lineTotal: selectedPrice,
-        note: product.note,
-        priceTier: globalPriceTier,
-        price1: product.price1,
-        price2: product.price2,
-        price3: product.price3,
-      };
-      setCartLines([...cartLines, newLine]);
-    }
-  };
-
-  // Cart line handlers
-  const handleQtyIncrement = (index: number) => {
-    const updated = [...cartLines];
-    const newQty = updated[index].qty + 1;
-    updated[index] = {
-      ...updated[index],
-      qty: newQty,
-      lineTotal: newQty * updated[index].unitPrice,
-    };
-    setCartLines(updated);
-  };
-
-  const handleQtyDecrement = (index: number) => {
-    const updated = [...cartLines];
-    const newQty = Math.max(1, updated[index].qty - 1);
-    updated[index] = {
-      ...updated[index],
-      qty: newQty,
-      lineTotal: newQty * updated[index].unitPrice,
-    };
-    setCartLines(updated);
-  };
-
-  const handleQtyChange = (index: number, qty: number) => {
-    if (qty < 1) return;
-    const updated = [...cartLines];
-    updated[index] = {
-      ...updated[index],
-      qty,
-      lineTotal: qty * updated[index].unitPrice,
-    };
-    setCartLines(updated);
-  };
-
-  const handlePriceChange = (index: number, unitPrice: number) => {
-    if (unitPrice < 0) return;
-    const updated = [...cartLines];
-    updated[index] = {
-      ...updated[index],
-      unitPrice,
-      lineTotal: updated[index].qty * unitPrice,
-      priceTier: 'price1', // Mark as custom
-    };
-    setCartLines(updated);
-  };
-
-  const handleRemoveLine = (index: number) => {
-    setCartLines(cartLines.filter((_, i) => i !== index));
-  };
-
-  // Get price tier badge text
-  const getPriceBadgeText = (line: CartLine): string => {
-    // Check if price matches any tier
-    if (line.price1 !== null && line.unitPrice === line.price1) return 'Giá 1';
-    if (line.price2 !== null && line.unitPrice === line.price2) return 'Giá 2';
-    if (line.price3 !== null && line.unitPrice === line.price3) return 'Giá 3';
-    return 'Tùy chỉnh';
-  };
-
-  const getPriceBadgeClass = (line: CartLine): string => {
-    if (line.price1 !== null && line.unitPrice === line.price1) return 'badge-price1';
-    if (line.price2 !== null && line.unitPrice === line.price2) return 'badge-price2';
-    if (line.price3 !== null && line.unitPrice === line.price3) return 'badge-price3';
-    return 'badge-custom';
-  };
-
 
   return (
     <div className="invoice-new-layout">
-      {/* LEFT COLUMN - Workflow Area */}
+      {/* LEFT COLUMN */}
       <div className="invoice-left-column">
-        {/* Header */}
         <div className="invoice-header">
           <h2>Tạo hóa đơn mới</h2>
-          <Link href="/invoices" className="btn btn-secondary">
-            Hủy
-          </Link>
+          <Link href="/invoices" className="btn btn-secondary">Hủy</Link>
         </div>
 
-        {error && <div className="form-error">{error}</div>}
+        {form.error && <div className="form-error">{form.error}</div>}
 
         {/* Customer Section */}
         <section className="invoice-section">
           <h3>Khách hàng</h3>
 
-          {selectedCustomer ? (
+          {form.customer ? (
             <div className="customer-card">
               <div className="customer-card-info">
                 <div className="customer-card-name">
                   <span className="customer-icon">👤</span>
-                  {selectedCustomer.name}
+                  {form.customer.name}
                 </div>
-                {selectedCustomer.phone && (
+                {form.customer.phone && (
                   <div className="customer-card-detail">
                     <span className="detail-icon">📞</span>
-                    {selectedCustomer.phone}
+                    {form.customer.phone}
                   </div>
                 )}
-                {selectedCustomer.address && (
+                {form.customer.address && (
                   <div className="customer-card-detail">
                     <span className="detail-icon">📍</span>
-                    {selectedCustomer.address}
+                    {form.customer.address}
                   </div>
                 )}
-                <div className={`customer-card-debt ${selectedCustomer.debt > 0 ? 'has-debt' : ''}`}>
+                <div className={`customer-card-debt ${form.customer.debt > 0 ? 'has-debt' : ''}`}>
                   <span className="detail-icon">💳</span>
-                  Công nợ hiện tại: {formatCurrency(selectedCustomer.debt)}
+                  Công nợ hiện tại: {formatCurrency(form.customer.debt)}
                 </div>
               </div>
               <button
@@ -297,14 +169,14 @@ export default function InvoiceNewPage() {
               <input
                 type="text"
                 placeholder="Nhập tên hoặc SĐT khách hàng…"
-                value={customerSearch}
+                value={form.customerSearch}
                 onChange={(e) => {
-                  setCustomerSearch(e.target.value);
-                  setShowCustomerDropdown(true);
+                  form.setCustomerSearch(e.target.value);
+                  form.setShowCustomerDropdown(true);
                 }}
-                onFocus={() => setShowCustomerDropdown(true)}
+                onFocus={() => form.setShowCustomerDropdown(true)}
               />
-              {showCustomerDropdown && (
+              {form.showCustomerDropdown && (
                 <div className="customer-search-dropdown">
                   <div
                     className="customer-search-item walk-in"
@@ -338,240 +210,70 @@ export default function InvoiceNewPage() {
           )}
         </section>
 
-        {/* Product Section */}
+        {/* Price Tier & Search */}
         <section className="invoice-section">
           <h3>Sản phẩm</h3>
-
-          {/* Price Tier Selector */}
-          <div className="price-tier-selector">
-            <div className="tier-selector-header">
-              <span className="tier-label">{vi.invoices.priceTierLabel}:</span>
-              <span className="tier-hint">{vi.invoices.priceTierHint}</span>
-            </div>
-            <div className="tier-options">
-              <label className={`tier-option ${globalPriceTier === 'price1' ? 'active' : ''}`}>
-                <input
-                  type="radio"
-                  name="priceTier"
-                  value="price1"
-                  checked={globalPriceTier === 'price1'}
-                  onChange={() => setGlobalPriceTier('price1')}
-                />
-                Giá 1
-              </label>
-              <label className={`tier-option ${globalPriceTier === 'price2' ? 'active' : ''}`}>
-                <input
-                  type="radio"
-                  name="priceTier"
-                  value="price2"
-                  checked={globalPriceTier === 'price2'}
-                  onChange={() => setGlobalPriceTier('price2')}
-                />
-                Giá 2
-              </label>
-              <label className={`tier-option ${globalPriceTier === 'price3' ? 'active' : ''}`}>
-                <input
-                  type="radio"
-                  name="priceTier"
-                  value="price3"
-                  checked={globalPriceTier === 'price3'}
-                  onChange={() => setGlobalPriceTier('price3')}
-                />
-                Giá 3
-              </label>
-            </div>
-          </div>
-
-          {/* Product Search & Add Panel */}
+          <PriceTierSwitch
+            value={form.priceTier}
+            onChange={form.changePriceTier}
+            hasCartItems={form.cartLines.length > 0}
+          />
           <ProductSearchAddPanel
             onAddToCart={handleAddToCart}
-            priceTier={globalPriceTier}
-            cartProductIds={cartProductIds}
+            priceTier={form.priceTier}
+            cartProductIds={form.cartProductIds}
             searchInputRef={productSearchInputRef}
           />
         </section>
 
-        {/* Cart Section */}
+        {/* Cart */}
         <section className="invoice-section cart-section">
-          <h3>Giỏ hàng</h3>
-          <table className="cart-table-enhanced">
-            <thead>
-              <tr>
-                <th>Sản phẩm</th>
-                <th style={{ width: '140px' }}>Số lượng</th>
-                <th style={{ width: '150px' }}>Đơn giá</th>
-                <th style={{ width: '120px', textAlign: 'right' }}>Thành tiền</th>
-                <th style={{ width: '50px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {cartLines.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="cart-empty">
-                    <div className="cart-empty-content">
-                      <span className="cart-empty-icon">🛒</span>
-                      <span>Chưa có sản phẩm trong giỏ hàng</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                cartLines.map((line, index) => (
-                  <tr key={line.productId}>
-                    <td>
-                      <div className="cart-product-info">
-                        <span className="cart-product-name">{line.productName}</span>
-                        <span className="cart-product-unit">{line.unit}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="qty-control">
-                        <button
-                          type="button"
-                          className="qty-btn"
-                          onClick={() => handleQtyDecrement(index)}
-                        >
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          className="qty-input"
-                          value={line.qty}
-                          onChange={(e) =>
-                            handleQtyChange(index, parseInt(e.target.value) || 1)
-                          }
-                          min="1"
-                        />
-                        <button
-                          type="button"
-                          className="qty-btn"
-                          onClick={() => handleQtyIncrement(index)}
-                        >
-                          +
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="price-cell">
-                        <input
-                          type="number"
-                          className="price-input"
-                          value={line.unitPrice}
-                          onChange={(e) =>
-                            handlePriceChange(index, parseFloat(e.target.value) || 0)
-                          }
-                          min="0"
-                          step="1000"
-                        />
-                        <span className={`price-badge ${getPriceBadgeClass(line)}`}>
-                          {getPriceBadgeText(line)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="line-total">
-                      {formatCurrency(line.lineTotal)}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="remove-btn"
-                        onClick={() => handleRemoveLine(index)}
-                        title="Xóa"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <h3>Giỏ hàng ({form.cartLines.length})</h3>
+          <CartTable
+            lines={form.cartLines}
+            onUpdateQty={form.updateQty}
+            onUpdatePrice={form.updatePrice}
+            onResetPrice={form.resetPriceToTier}
+            onRemove={handleRemove}
+            registerQtyRef={form.registerQtyRef}
+          />
         </section>
 
-        {/* Note Section */}
+        {/* Note */}
         <section className="invoice-section">
           <h3>Ghi chú</h3>
           <textarea
             className="invoice-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+            value={form.note}
+            onChange={(e) => form.setNote(e.target.value)}
             placeholder="Ghi chú hóa đơn (nếu có)…"
             rows={2}
           />
         </section>
       </div>
 
-      {/* RIGHT COLUMN - Payment Summary (Sticky) */}
+      {/* RIGHT COLUMN */}
       <div className="invoice-right-column">
-        <div className="payment-card">
-          <h3>Thanh toán</h3>
-
-          <div className="payment-rows">
-            <div className="payment-row">
-              <span className="payment-label">Tạm tính:</span>
-              <span className="payment-value">{formatCurrency(subtotal)}</span>
-            </div>
-
-            <div className="payment-row">
-              <span className="payment-label">Giảm giá:</span>
-              <input
-                type="number"
-                className="payment-input"
-                value={discount}
-                onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                min="0"
-                step="1000"
-              />
-            </div>
-
-            <div className="payment-row payment-total">
-              <span className="payment-label">TỔNG CỘNG:</span>
-              <span className="payment-value total-value">{formatCurrency(total)}</span>
-            </div>
-
-            <div className="payment-row">
-              <span className="payment-label">Khách đưa:</span>
-              <input
-                type="number"
-                className="payment-input"
-                value={paid}
-                onChange={(e) => setPaid(parseFloat(e.target.value) || 0)}
-                min="0"
-                step="1000"
-              />
-            </div>
-
-            <div className={`payment-row payment-change ${change >= 0 ? 'positive' : 'negative'}`}>
-              <span className="payment-label">Tiền thừa:</span>
-              <span className="payment-value">{formatCurrency(change)}</span>
-            </div>
-
-            {hasDebt && (
-              <div className="payment-row payment-debt">
-                <span className="payment-label">
-                  <span className="warning-icon">⚠️</span>
-                  Phát sinh công nợ:
-                </span>
-                <span className="payment-value debt-value">{formatCurrency(debtIncrease)}</span>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            className={`save-invoice-btn ${hasDebt ? 'has-debt' : ''}`}
-            onClick={handleSave}
-            disabled={!canSave}
-          >
-            {saving ? (
-              'Đang lưu...'
-            ) : hasDebt ? (
-              <>⚠️ LƯU HÓA ĐƠN (CÔNG NỢ)</>
-            ) : (
-              <>💾 LƯU HÓA ĐƠN</>
-            )}
-          </button>
-        </div>
+        <PaymentSummary
+          subtotal={form.subtotal}
+          discount={form.discount}
+          discountMode={form.discountMode}
+          discountAmount={form.discountAmount}
+          total={form.total}
+          paid={form.paid}
+          remaining={form.remaining}
+          hasDebt={form.hasDebt}
+          hasCustomer={form.customer !== null}
+          canSave={canSave}
+          saving={form.saving}
+          onDiscountChange={form.setDiscount}
+          onDiscountModeChange={form.setDiscountMode}
+          onPaidChange={form.setPaid}
+          onSave={handleSave}
+        />
       </div>
+
+      <ToastContainer />
     </div>
   );
 }

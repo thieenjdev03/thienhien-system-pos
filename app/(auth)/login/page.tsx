@@ -7,21 +7,28 @@ import { isValidPin } from '@/utils/auth';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, isLoading, session, checkHasUsers, hasUsers } = useAuth();
+  const { login, isLoading, session, checkHasUsers, hasUsers, hasBin } = useAuth();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Redirect to BIN setup if no BIN configured
+  useEffect(() => {
+    if (!isLoading && hasBin === false) {
+      router.push('/bin-setup');
+    }
+  }, [isLoading, hasBin, router]);
+
   // Check if users exist, redirect to setup if not
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && hasBin === true) {
       checkHasUsers().then((exists) => {
         if (!exists) {
           router.push('/setup');
         }
       });
     }
-  }, [isLoading, checkHasUsers, router]);
+  }, [isLoading, hasBin, checkHasUsers, router]);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -86,7 +93,7 @@ export default function LoginPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pin.length, submitting, handleNumberClick, handleBackspace, handleSubmit, handleClear]);
 
-  if (isLoading || hasUsers === null) {
+  if (isLoading || hasBin === null || hasUsers === null) {
     return (
       <div className="w-full max-w-sm rounded-lg bg-white p-8 shadow-lg text-center">
         <div className="text-slate-500">Đang tải...</div>

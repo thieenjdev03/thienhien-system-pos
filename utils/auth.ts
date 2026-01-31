@@ -1,9 +1,10 @@
 /**
- * Authentication utilities for PIN-based login
+ * Authentication utilities for PIN-based login and BIN device identification
  * Uses SubtleCrypto for secure password hashing
  */
 
 const SALT = 'pos-mvp-pin-salt-v1';
+const BIN_STORAGE_KEY = 'pos_device_bin';
 
 /**
  * Hash a PIN using SHA-256
@@ -44,4 +45,45 @@ export function isValidPin(pin: string): boolean {
  */
 export function generateUserId(): string {
   return `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
+// ============================================
+// BIN (Device/POS ID) Utilities
+// ============================================
+
+/**
+ * Validate BIN format
+ * @param bin - The BIN to validate
+ * @returns True if BIN is valid (6-12 alphanumeric characters)
+ */
+export function isValidBin(bin: string): boolean {
+  return /^[A-Za-z0-9]{6,12}$/.test(bin);
+}
+
+/**
+ * Save BIN to localStorage
+ * @param bin - The BIN to save (will be uppercase)
+ */
+export function saveBin(bin: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(BIN_STORAGE_KEY, bin.toUpperCase());
+  }
+}
+
+/**
+ * Retrieve BIN from localStorage
+ * @returns The stored BIN or null if not set
+ */
+export function getBin(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(BIN_STORAGE_KEY);
+}
+
+/**
+ * Clear BIN from localStorage
+ */
+export function clearBin(): void {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(BIN_STORAGE_KEY);
+  }
 }

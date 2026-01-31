@@ -9,8 +9,8 @@ import React, {
   useMemo,
 } from 'react';
 import { db } from '@/db';
-import { verifyPin } from '@/utils/auth';
-import type { AuthSession, User } from '@/domain/models';
+import { verifyPin, getBin, saveBin } from '@/utils/auth';
+import type { AuthSession } from '@/domain/models';
 
 const SESSION_KEY = 'pos_auth_session';
 const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
@@ -19,9 +19,12 @@ interface AuthContextValue {
   session: AuthSession | null;
   isLoading: boolean;
   hasUsers: boolean | null; // null = not checked yet
+  bin: string | null; // device BIN
+  hasBin: boolean | null; // null = checking, true/false
   login: (pin: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   checkHasUsers: () => Promise<boolean>;
+  setBinValue: (bin: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -30,9 +33,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasUsers, setHasUsers] = useState<boolean | null>(null);
+  const [bin, setBin] = useState<string | null>(null);
+  const [hasBin, setHasBin] = useState<boolean | null>(null);
 
-  // Check for existing session on mount
+  // Check for existing session and BIN on mount
   useEffect(() => {
+    // Check session
     const stored = localStorage.getItem(SESSION_KEY);
     if (stored) {
       try {
@@ -46,6 +52,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem(SESSION_KEY);
       }
     }
+
+    // Check BIN
+    const storedBin = getBin();
+    if (storedBin) {
+      setBin(storedBin);
+      setHasBin(true);
+    } else {
+      setHasBin(false);
+    }
+
     setIsLoading(false);
   }, []);
 
@@ -61,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (pin: string): Promise<{ success: boolean; error?: string }> => {
     try {
       // Find active users and check PIN
-      const users = await db.users.where('active').equals(1).toArray();
+      const users = await db.users.toArray();
 
       if (users.length === 0) {
         return { success: false, error: 'Không tìm thấy tài khoản.' };
@@ -96,16 +112,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   }, []);
 
+  // Set BIN value
+  const setBinValue = useCallback((newBin: string) => {
+    saveBin(newBin);
+    setBin(newBin.toUpperCase());
+    setHasBin(true);
+  }, []);
+
   const value = useMemo(
     () => ({
       session,
       isLoading,
       hasUsers,
+      bin,
+      hasBin,
       login,
       logout,
       checkHasUsers,
+      setBinValue,
     }),
-    [session, isLoading, hasUsers, login, logout, checkHasUsers]
+    [session, isLoading, hasUsers, bin, hasBin, login, logout, checkHasUsers, setBinValue]
   );
 
   return (

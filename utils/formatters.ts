@@ -21,6 +21,29 @@ export function formatNumber(value: number): string {
 }
 
 /**
+ * Parse Vietnamese currency string to number
+ * Handles: "100.000", "100,000", "100000", "100.000 ₫"
+ */
+export function parseMoney(value: string): number {
+  if (!value) return 0;
+  // Remove currency symbol, spaces, and thousand separators
+  const cleaned = value
+    .replace(/[₫đ\s]/gi, '')
+    .replace(/\./g, '')  // Remove dots (thousand separator)
+    .replace(/,/g, '');  // Remove commas
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+/**
+ * Format number as money string without currency symbol
+ * Returns: "100.000"
+ */
+export function formatMoney(value: number): string {
+  return new Intl.NumberFormat('vi-VN').format(Math.round(value));
+}
+
+/**
  * Format timestamp as date string
  */
 export function formatDate(timestamp: number): string {

@@ -126,13 +126,12 @@ export function CustomersPage() {
         </tbody>
       </table>
 
-      {showForm && (
-        <CustomerForm
-          customer={editingCustomer}
-          onSave={handleSave}
-          onCancel={handleCancel}
-        />
-      )}
+      <CustomerForm
+        isOpen={showForm}
+        customer={editingCustomer}
+        onSave={handleSave}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

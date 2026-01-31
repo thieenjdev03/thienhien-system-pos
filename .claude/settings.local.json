@@ -3,7 +3,26 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(node /Users/thiengkim/Documents/pos-next-ui/.claude/scripts/set-active-plan.cjs:*)",
+      "Bash(npm run lint:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(find:*)",
+      "Bash(node scripts/detect-topic.js:*)",
+      "Bash(node scripts/fetch-docs.js:*)",
+      "WebFetch(domain:www.prisma.io)",
+      "Bash(python:*)",
+      "Bash(npx prisma validate:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node .claude/scripts/set-active-plan.cjs:*)",
+      "Bash(npx next build:*)",
+      "Bash(git -C /Users/thiengkim/Documents/pos-next-ui status -s)",
+      "Bash(git -C /Users/thiengkim/Documents/pos-next-ui log --oneline -3)",
+      "Bash(git add:*)",
+      "Bash(git -C /Users/thiengkim/Documents/pos-next-ui diff --cached --stat)",
+      "Bash(git commit:*)"
     ]
   }
 }
