@@ -11,10 +11,11 @@ import { Prisma } from '@/lib/generated/prisma/client'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const product = await productRepo.getById(params.id)
+    const { id } = await context.params
+    const product = await productRepo.getById(id)
 
     if (!product) {
       return NextResponse.json(
@@ -35,13 +36,14 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await context.params
     const body = await request.json()
 
     // Check if product exists
-    const existing = await productRepo.getById(params.id)
+    const existing = await productRepo.getById(id)
     if (!existing) {
       return NextResponse.json(
         { error: 'Product not found' },
@@ -49,7 +51,7 @@ export async function PUT(
       )
     }
 
-    const product = await productRepo.update(params.id, {
+    const product = await productRepo.update(id, {
       name: body.name,
       category: body.category,
       unit: body.unit,
@@ -82,18 +84,19 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await context.params
     const { searchParams } = new URL(request.url)
     const hard = searchParams.get('hard') === 'true'
 
     if (hard) {
       // Hard delete (use with caution!)
-      await productRepo.hardDelete(params.id)
+      await productRepo.hardDelete(id)
     } else {
       // Soft delete (default)
-      await productRepo.softDelete(params.id)
+      await productRepo.softDelete(id)
     }
 
     return NextResponse.json({ success: true })

@@ -1,10 +1,9 @@
 'use client';
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatCurrency } from '@/utils/formatters';
 import { cn } from '@/lib/utils';
 import type { EnhancedCartLine } from '../types';
-import type { PriceTier } from '@/domain/models';
 
 interface CartItemProps {
   line: EnhancedCartLine;
@@ -16,12 +15,6 @@ interface CartItemProps {
   registerQtyRef: (productId: string, ref: HTMLInputElement | null) => void;
 }
 
-const TIER_BADGE = {
-  price1: { label: 'G1', class: 'badge-price1' },
-  price2: { label: 'G2', class: 'badge-price2' },
-  price3: { label: 'G3', class: 'badge-price3' },
-} as const;
-
 export function CartItem({
   line,
   index,
@@ -31,159 +24,139 @@ export function CartItem({
   onRemove,
   registerQtyRef,
 }: CartItemProps) {
-  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const holdIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isEditingPrice, setIsEditingPrice] = useState(line.isCustomPrice);
+  const priceInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Cleanup hold timers on unmount
   useEffect(() => {
-    return () => {
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-      if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
-    };
-  }, []);
-
-  // Handle hold-to-repeat
-  const startHold = useCallback((action: () => void) => {
-    action(); // Immediate action
-
-    // Start repeating after 300ms
-    holdTimerRef.current = setTimeout(() => {
-      holdIntervalRef.current = setInterval(action, 100);
-    }, 300);
-  }, []);
-
-  const stopHold = useCallback(() => {
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
+    if (isEditingPrice) {
+      priceInputRef.current?.focus();
+      priceInputRef.current?.select();
     }
-    if (holdIntervalRef.current) {
-      clearInterval(holdIntervalRef.current);
-      holdIntervalRef.current = null;
+  }, [isEditingPrice]);
+
+  const handleQtyChange = (value: number) => {
+    if (Number.isNaN(value)) return;
+    if (value <= 0) {
+      onRemove(index);
+      return;
     }
-  }, []);
-
-  const handleIncrement = useCallback(() => {
-    onUpdateQty(index, line.qty + 1);
-  }, [index, line.qty, onUpdateQty]);
-
-  const handleDecrement = useCallback(() => {
-    onUpdateQty(index, line.qty - 1);
-  }, [index, line.qty, onUpdateQty]);
-
-  // Get tier badge
-  const getTierBadge = () => {
-    if (line.isCustomPrice) {
-      return { label: 'Tùy chỉnh', class: 'badge-custom' };
-    }
-    return TIER_BADGE[line.priceTier as keyof typeof TIER_BADGE] || TIER_BADGE.price1;
+    onUpdateQty(index, value);
   };
 
-  const badge = getTierBadge();
+  const tierLabel = line.isCustomPrice
+    ? 'Tùy chỉnh'
+    : line.priceTier?.toUpperCase() ?? 'G1';
 
   return (
-    <tr className="cart-item-row">
-      {/* Product Info */}
-      <td>
-        <div className="cart-product-info">
-          <span className="cart-product-name">{line.productName}</span>
-          <span className="cart-product-unit">{line.unit}</span>
+    <tr className="border-b border-slate-100 text-lg">
+      {/* Product info + remove */}
+      <td className="px-2 py-1 align-top">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="max-w-[180px] truncate font-medium text-slate-900">
+              {line.productName}
+            </div>
+            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+              <span>{line.unit}</span>
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                {tierLabel}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="ml-2 rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            onClick={() => onRemove(index)}
+            title="Xóa dòng"
+          >
+            ✕
+          </button>
         </div>
       </td>
 
-      {/* Quantity Control */}
-      <td>
-        <div className="qty-control">
+      {/* Quantity */}
+      <td className="px-2 py-1 align-middle">
+        <div className="inline-flex items-center rounded-md border border-slate-200 bg-white">
           <button
             type="button"
-            className="qty-btn qty-btn-minus"
-            onMouseDown={() => startHold(handleDecrement)}
-            onMouseUp={stopHold}
-            onMouseLeave={stopHold}
-            onTouchStart={() => startHold(handleDecrement)}
-            onTouchEnd={stopHold}
+            className="px-2 py-1 text-lg text-slate-700 hover:bg-slate-100"
+            onClick={() => handleQtyChange(line.qty - 1)}
           >
             −
           </button>
           <input
             type="number"
-            className="qty-input"
+            className="w-14 border-x border-slate-200 px-1 py-1 text-center text-lg outline-none"
             value={line.qty}
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              if (!isNaN(val)) onUpdateQty(index, val);
-            }}
-            min="0"
+            onChange={(e) => handleQtyChange(parseInt(e.target.value, 10))}
+            onFocus={(e) => e.target.select()}
+            min={1}
             ref={(ref) => registerQtyRef(line.productId, ref)}
           />
           <button
             type="button"
-            className="qty-btn qty-btn-plus"
-            onMouseDown={() => startHold(handleIncrement)}
-            onMouseUp={stopHold}
-            onMouseLeave={stopHold}
-            onTouchStart={() => startHold(handleIncrement)}
-            onTouchEnd={stopHold}
+            className="px-2 py-1 text-lg text-slate-700 hover:bg-slate-100"
+            onClick={() => handleQtyChange(line.qty + 1)}
           >
             +
           </button>
         </div>
       </td>
 
-      {/* Unit Price */}
-      <td>
-        <div className="price-cell">
-          {line.isCustomPrice && (
-            <span className="original-price">
-              {formatCurrency(line.originalTierPrice)}
-            </span>
-          )}
-          <div className="price-input-wrapper">
+      {/* Unit Price (view / edit) */}
+      <td className="px-2 py-1 align-middle">
+        {isEditingPrice ? (
+          <div className="flex items-center gap-1">
             <input
+              ref={priceInputRef}
               type="number"
-              className={cn('price-input', line.isCustomPrice && 'is-custom')}
+              className="w-24 rounded-md border border-slate-200 px-2 py-1 text-lg outline-none focus:border-blue-600"
               value={line.unitPrice}
               onChange={(e) => {
                 const val = parseFloat(e.target.value);
-                if (!isNaN(val)) onUpdatePrice(index, val);
+                if (!Number.isNaN(val)) onUpdatePrice(index, val);
               }}
-              min="0"
-              step="1000"
+              onBlur={() => setIsEditingPrice(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              min={0}
+              step={1000}
             />
-            <span className={cn('price-badge', badge.class)}>
-              {badge.label}
-            </span>
-          </div>
-          {line.isCustomPrice && (
             <button
               type="button"
-              className="reset-price-btn"
-              onClick={() => onResetPrice(index)}
-              title="Reset về giá tier"
+              className="text-xs text-slate-500 hover:text-slate-800"
+              onClick={() => {
+                onResetPrice(index);
+                setIsEditingPrice(false);
+              }}
             >
-              ↺
+              Reset
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <span className="text-lg text-slate-700">
+              {formatCurrency(line.unitPrice)}
+            </span>
+            <button
+              type="button"
+              className="self-start text-[11px] text-slate-400 hover:text-slate-700"
+              onClick={() => setIsEditingPrice(true)}
+            >
+              Sửa giá
+            </button>
+          </div>
+        )}
       </td>
 
       {/* Line Total */}
-      <td className="line-total">
-        <span className="line-total-value">
+      <td className="px-2 py-1 align-middle text-right">
+        <div className="text-lg font-semibold text-slate-900">
           {formatCurrency(line.lineTotal)}
-        </span>
-      </td>
-
-      {/* Remove */}
-      <td>
-        <button
-          type="button"
-          className="remove-btn"
-          onClick={() => onRemove(index)}
-          title="Xóa"
-        >
-          ✕
-        </button>
+        </div>
       </td>
     </tr>
   );

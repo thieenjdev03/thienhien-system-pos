@@ -3,9 +3,7 @@
  * Features: debounced search, keyboard navigation, quick add to cart
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/db';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { formatCurrency } from '@/utils/formatters';
 import { vi } from '@/shared/i18n/vi';
 import { cn } from '@/lib/utils';
@@ -45,66 +43,129 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+/**
+ * Map API product payload (Prisma model) to domain Product
+ */
+function mapApiProductToDomain(p: any): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category ?? undefined,
+    unit: p.unit,
+    price1: p.price1 === null || p.price1 === undefined ? null : Number(p.price1),
+    price2: p.price2 === null || p.price2 === undefined ? null : Number(p.price2),
+    price3: p.price3 === null || p.price3 === undefined ? null : Number(p.price3),
+    note: p.note ?? undefined,
+    active: Boolean(p.active),
+    createdAt: new Date(p.createdAt).getTime(),
+    updatedAt: new Date(p.updatedAt).getTime(),
+    sourceId: p.sourceId ?? undefined,
+  };
+}
+
 export function ProductSearchAddPanel({
   onAddToCart,
   priceTier,
   cartProductIds,
   searchInputRef,
 }: ProductSearchAddPanelProps) {
-  const INITIAL_VISIBLE = 5;
-  const LOAD_MORE_COUNT = 10;
+  const PAGE_SIZE = 10;
   const SCROLL_THRESHOLD_PX = 32;
   const RESULTS_MAX_HEIGHT = '360px'; // ~5 items tall; keeps list compact
 
   const [search, setSearch] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
-  const [itemsToShow, setItemsToShow] = useState(INITIAL_VISIBLE);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
   // Debounce search input (300ms)
   const debouncedSearch = useDebounce(search.trim().toLowerCase(), 300);
 
-  // Pre-load all active products once (cached by useLiveQuery)
-  // This avoids re-fetching from IndexedDB on every search change
-  const allActiveProducts = useLiveQuery(
-    async () => {
+  const effectiveHighlightedIndex =
+    highlightedIndex >= products.length ? -1 : highlightedIndex;
+
+  const fetchProducts = useCallback(
+    async ({
+      searchTerm,
+      offset: fetchOffset,
+      append,
+    }: {
+      searchTerm: string;
+      offset: number;
+      append: boolean;
+    }) => {
+      if (!searchTerm.trim()) {
+        setProducts([]);
+        setHasMore(false);
+        setOffset(0);
+        setError(null);
+        return;
+      }
+
+      const loadingMore = append && fetchOffset > 0;
+      if (loadingMore) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+      }
+      setError(null);
+
       try {
-        const all = await db.products.toArray();
-        // Filter by active (boolean)
-        const active = all.filter(p => p.active === true);
-        return active;
-      } catch (error) {
-        console.error('Error loading products:', error);
-        return [];
+        const params = new URLSearchParams();
+        params.set('search', searchTerm);
+        params.set('active', 'true');
+        params.set('limit', PAGE_SIZE.toString());
+        params.set('offset', String(fetchOffset));
+
+        const res = await fetch(`/api/products?${params.toString()}`, {
+          method: 'GET',
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to fetch products (${res.status})`);
+        }
+
+        const json = await res.json();
+        const apiProducts = (json?.data ?? []) as any[];
+        const mapped = apiProducts.map(mapApiProductToDomain);
+
+        setProducts((prev) => (append ? [...prev, ...mapped] : mapped));
+
+        const pagination = json?.pagination;
+        const nextHasMore = Boolean(pagination?.hasMore);
+        setHasMore(nextHasMore);
+        setOffset(fetchOffset + mapped.length);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : vi.validation.invalidValue);
+      } finally {
+        if (loadingMore) {
+          setIsLoadingMore(false);
+        } else {
+          setIsLoading(false);
+        }
       }
     },
-    [] // Empty deps - only fetch once, auto-updates when DB changes
+    [PAGE_SIZE]
   );
 
-  // Filter products from cache based on search term
-  const products = useMemo(() => {
-    if (!allActiveProducts) return undefined;
-    if (!debouncedSearch) return [];
+  // Load first page when search term changes (debounced)
+  useEffect(() => {
+    if (!debouncedSearch) {
+      setProducts([]);
+      setHasMore(false);
+      setOffset(0);
+      setError(null);
+      return;
+    }
 
-    // Filter in memory from cached products (much faster than DB query)
-    const filtered = allActiveProducts.filter(p => {
-      const nameMatch = p.name.toLowerCase().includes(debouncedSearch);
-      const categoryMatch = p.category?.toLowerCase().includes(debouncedSearch);
-      return nameMatch || categoryMatch;
-    });
-
-    // Limit to top 30 results for performance
-    return filtered.slice(0, 30);
-  }, [allActiveProducts, debouncedSearch]);
-
-  const visibleProducts = useMemo(() => {
-    if (!products) return [];
-    return products.slice(0, Math.min(itemsToShow, products.length));
-  }, [products, itemsToShow]);
-
-  const effectiveHighlightedIndex =
-    highlightedIndex >= visibleProducts.length ? -1 : highlightedIndex;
+    fetchProducts({ searchTerm: debouncedSearch, offset: 0, append: false });
+  }, [debouncedSearch, fetchProducts]);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -134,7 +195,7 @@ export function ProductSearchAddPanel({
 
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!visibleProducts || visibleProducts.length === 0) {
+    if (!products || products.length === 0) {
       if (e.key === 'Escape') {
         setSearch('');
       }
@@ -145,7 +206,7 @@ export function ProductSearchAddPanel({
       case 'ArrowDown':
         e.preventDefault();
         setHighlightedIndex((prev) => {
-          const maxIndex = visibleProducts.length - 1;
+          const maxIndex = products.length - 1;
           if (maxIndex < 0) return -1;
           const clampedPrev = Math.min(Math.max(prev, -1), maxIndex);
           return clampedPrev < maxIndex ? clampedPrev + 1 : clampedPrev;
@@ -159,11 +220,11 @@ export function ProductSearchAddPanel({
 
       case 'Enter':
         e.preventDefault();
-        if (highlightedIndex >= 0 && highlightedIndex < visibleProducts.length) {
-          handleAddProduct(visibleProducts[highlightedIndex]);
-        } else if (visibleProducts.length === 1) {
+        if (highlightedIndex >= 0 && highlightedIndex < products.length) {
+          handleAddProduct(products[highlightedIndex]);
+        } else if (products.length === 1) {
           // If only one result, add it
-          handleAddProduct(visibleProducts[0]);
+          handleAddProduct(products[0]);
         }
         break;
 
@@ -171,23 +232,23 @@ export function ProductSearchAddPanel({
         e.preventDefault();
         setSearch('');
         setHighlightedIndex(-1);
-        setItemsToShow(INITIAL_VISIBLE);
+        setProducts([]);
+        setHasMore(false);
+        setOffset(0);
         break;
     }
   };
 
   const hasSearch = debouncedSearch.length > 0;
-  const hasResults = visibleProducts && visibleProducts.length > 0;
-  const showResults = hasSearch && (hasResults || products?.length === 0);
+  const hasResults = products && products.length > 0;
+  const showResults = hasSearch && (hasResults || (!isLoading && products.length === 0));
 
   const handleResultsScroll: React.UIEventHandler<HTMLDivElement> = (e) => {
-    if (!products) return;
-    if (itemsToShow >= products.length) return;
-
     const el = e.currentTarget;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceToBottom <= SCROLL_THRESHOLD_PX) {
-      setItemsToShow((prev) => Math.min(prev + LOAD_MORE_COUNT, products.length));
+      if (!hasMore || isLoading || isLoadingMore) return;
+      fetchProducts({ searchTerm: debouncedSearch, offset, append: true });
     }
   };
 
@@ -209,13 +270,15 @@ export function ProductSearchAddPanel({
             setSearch(e.target.value);
             // Reset highlight when user types (immediate feedback)
             setHighlightedIndex(-1);
-            setItemsToShow(INITIAL_VISIBLE);
           }}
           onKeyDown={handleKeyDown}
           autoComplete="off"
         />
         {feedbackMessage && (
           <div className="mt-1 text-xs text-green-600">{feedbackMessage}</div>
+        )}
+        {error && (
+          <div className="mt-1 text-xs text-red-600">{error}</div>
         )}
       </div>
 
@@ -227,8 +290,13 @@ export function ProductSearchAddPanel({
           style={{ maxHeight: RESULTS_MAX_HEIGHT, overflowY: 'auto' }}
           onScroll={handleResultsScroll}
         >
-          {hasResults ? (
-            visibleProducts.map((product, index) => {
+          {isLoading && products.length === 0 ? (
+            <div className="px-3 py-2 text-center text-slate-400">
+              Đang tải sản phẩm...
+            </div>
+          ) : hasResults ? (
+            <>
+              {products.map((product, index) => {
               const inCart = cartProductIds.has(product.id);
               const isHighlighted = index === highlightedIndex;
 
@@ -236,7 +304,7 @@ export function ProductSearchAddPanel({
                 <div
                   key={product.id}
                   className={cn(
-                    'flex cursor-pointer items-center justify-between border-b border-slate-100 px-3 py-2 text-sm',
+                    'product-result-item flex cursor-pointer items-center justify-between border-b border-slate-100 px-3 py-2 text-sm',
                     isHighlighted && 'bg-slate-50',
                     inCart && 'bg-green-50'
                   )}
@@ -286,7 +354,18 @@ export function ProductSearchAddPanel({
                   </button>
                 </div>
               );
-            })
+            })}
+              {isLoadingMore && (
+                <div className="px-3 py-2 text-center text-xs text-slate-400">
+                  Đang tải thêm sản phẩm...
+                </div>
+              )}
+              {!isLoadingMore && !hasMore && products.length > 0 && (
+                <div className="px-3 py-2 text-center text-xs text-slate-300">
+                  Đã hiển thị tất cả kết quả.
+                </div>
+              )}
+            </>
           ) : (
             <div className="px-3 py-2 text-center text-slate-400">
               Không tìm thấy sản phẩm phù hợp.

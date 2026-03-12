@@ -1,5 +1,6 @@
 "use client";
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db';
@@ -8,6 +9,9 @@ import { vi } from '@/shared/i18n/vi';
 import { cn } from '@/lib/utils';
 
 export default function InvoicesPage() {
+  useEffect(() => {
+    document.title = 'Hóa đơn - POS Thiện Hiền';
+  }, []);
   const router = useRouter();
 
   // Live query for invoices with customer lookup

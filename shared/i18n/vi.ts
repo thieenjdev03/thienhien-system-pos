@@ -98,7 +98,8 @@ const vi = {
     errors: 'Lỗi',
     errorDetails: 'Chi tiết lỗi (10 đầu tiên)',
     // Preview
-    preview: 'Xem trước (20 sản phẩm đầu)',
+    preview: 'Xem trước',
+    scrollToViewAll: 'Cuộn để xem tất cả',
     downloadSample: 'Tải file mẫu',
     // Validation errors
     rowError: 'Dòng {row}: {message}',

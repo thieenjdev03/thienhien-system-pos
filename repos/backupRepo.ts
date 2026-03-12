@@ -7,7 +7,7 @@ import { db } from '../db';
 import type { BackupPayload, BackupData } from '../domain/models';
 import { BackupPayloadSchema } from '../domain/schemas';
 
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
 const APP_NAME = 'POS-MVP';
 
 export const backupRepo = {
@@ -15,12 +15,13 @@ export const backupRepo = {
    * Export all data as a backup payload
    */
   async exportData(): Promise<BackupPayload> {
-    const [products, customers, invoices, invoiceItems, counters] = await Promise.all([
+    const [products, customers, invoices, invoiceItems, counters, users] = await Promise.all([
       db.products.toArray(),
       db.customers.toArray(),
       db.invoices.toArray(),
       db.invoiceItems.toArray(),
       db.counters.toArray(),
+      db.users.toArray(),
     ]);
 
     const payload: BackupPayload = {
@@ -35,6 +36,7 @@ export const backupRepo = {
         invoices,
         invoiceItems,
         counters,
+        users,
       },
     };
 
@@ -61,6 +63,7 @@ export const backupRepo = {
       db.invoices,
       db.invoiceItems,
       db.counters,
+      db.users,
     ], async () => {
       // Clear all tables
       await Promise.all([
@@ -69,6 +72,7 @@ export const backupRepo = {
         db.invoices.clear(),
         db.invoiceItems.clear(),
         db.counters.clear(),
+        db.users.clear(),
       ]);
 
       // Import all data
@@ -78,6 +82,7 @@ export const backupRepo = {
         db.invoices.bulkPut(data.invoices),
         db.invoiceItems.bulkPut(data.invoiceItems),
         db.counters.bulkPut(data.counters),
+        db.users.bulkPut(data.users),
       ]);
     });
   },

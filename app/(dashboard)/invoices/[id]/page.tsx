@@ -21,6 +21,10 @@ export default function InvoiceDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    document.title = 'Chi tiết hóa đơn - POS Thiện Hiền';
+  }, []);
+
+  useEffect(() => {
     const loadInvoice = async () => {
       if (!id) {
         setError(vi.validation.invalidValue);
@@ -72,59 +76,84 @@ export default function InvoiceDetailPage() {
   }
 
   const handlePrint = () => {
-    window.print();
+    if (!invoice) return;
+    window.open(`/invoices/${invoice.id}/print`, '_blank');
   };
 
   return (
     <div className="p-8 max-w-5xl mx-auto bg-white min-h-screen">
       <InvoiceHeader invoice={invoice} onPrint={handlePrint} />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-        {/* Info Column */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        {/* Customer Column (Left) */}
         <div className="space-y-4">
-             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Thông tin chung</h3>
-             <div className="flex flex-col gap-2 text-sm">
-                <div>
-                    <span className="text-slate-500 w-24 inline-block">{vi.invoices.invoiceNo}:</span>
-                    <span className="font-medium text-slate-900">{invoice.invoiceNo}</span>
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <i className="fa fa-user-group mr-2" />
+            Thông tin khách hàng
+          </h3>
+          {customer ? (
+            <div className="flex items-start gap-2">
+              <div className="flex flex-col gap-2">
+                <div className="text-base text-slate-900 font-bold">
+                  <i className="fa fa-user mr-1 text-slate-500 " aria-hidden="true" /> {vi.customers.name}: {customer.name}
                 </div>
-                <div>
-                   <span className="text-slate-500 w-24 inline-block">{vi.invoices.createdAt}:</span>
-                   <span className="font-medium text-slate-900">{new Date(invoice.createdAt).toLocaleString('vi-VN')}</span>
-                </div>
-                {invoice.note && (
-                   <div className="mt-2 text-slate-600 italic bg-amber-50 p-2 rounded text-xs border border-amber-100">
-                      "{invoice.note}"
-                   </div>
+                {customer.phone && (
+                  <div className="text-sm text-slate-500 mt-1">
+                    <i className="fa fa-phone mr-1" aria-hidden="true" /> SĐT: {customer.phone}
+                  </div>
                 )}
-             </div>
+                {customer.address && (
+                  <div className="text-sm text-slate-500">
+                    <i className="fa fa-location-dot mr-1" aria-hidden="true" /> Địa chỉ: {customer.address}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 text-slate-500 bg-slate-50 p-3 rounded-md">
+              <span className="text-xl">
+                <i className="fa fa-store" aria-hidden="true" />
+              </span>
+              <span>{vi.customers.walkIn} ({vi.customers.walkInDescription})</span>
+            </div>
+          )}
         </div>
 
-        {/* Customer Column */}
-        <div className="space-y-4 md:col-span-2">
-            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">{vi.invoices.customer}</h3>
-            {customer ? (
-                <div className="flex items-start gap-4">
-                    <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-lg">
-                        👤
-                    </div>
-                    <div>
-                        <div className="text-base font-bold text-slate-900">{customer.name}</div>
-                        {customer.phone && <div className="text-sm text-slate-500 mt-1">📞 {customer.phone}</div>}
-                        {customer.address && <div className="text-sm text-slate-500">📍 {customer.address}</div>}
-                    </div>
-                </div>
-            ) : (
-                <div className="flex items-center gap-3 text-slate-500 bg-slate-50 p-3 rounded-md">
-                   <span className="text-xl">🏪</span>
-                   <span>{vi.customers.walkIn} ({vi.customers.walkInDescription})</span>
-                </div>
+        {/* Info Column (Right) */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <i className="fa fa-info-circle mr-2" />
+            Thông tin chung
+          </h3>
+          <div className="flex flex-col gap-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 ">
+                <i className="fa fa-file-invoice-dollar mr-1" />
+                {vi.invoices.invoiceNo}:
+              </span>
+              <span className="font-medium text-slate-900">{invoice.invoiceNo}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 ">
+                <i className="fa fa-calendar-alt mr-1" />
+                {vi.invoices.createdAt}:
+              </span>
+              <span className="font-medium text-slate-900">{new Date(invoice.createdAt).toLocaleString('vi-VN')}</span>
+            </div>
+            {invoice.note && (
+              <div className="mt-2 text-slate-600 italic bg-amber-50 p-2 rounded text-xs border border-amber-100">
+                <i className="fa fa-note-sticky mr-1" />"{invoice.note}"
+              </div>
             )}
+          </div>
         </div>
       </div>
 
       <div className="mb-8">
-        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">{vi.invoices.invoiceDetail}</h3>
+        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">
+          <i className="fa fa-list mr-2" />
+          {vi.invoices.invoiceDetail}
+        </h3>
         <InvoiceItemsTable items={invoice.items} />
       </div>
 

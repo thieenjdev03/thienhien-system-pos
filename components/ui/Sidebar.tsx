@@ -19,7 +19,7 @@ export default function Sidebar() {
     <nav className="flex h-full flex-col">
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-slate-200 px-4">
-        <span className="text-xl font-bold text-blue-600">POS System</span>
+        <span className="text-xl font-bold text-blue-600">CTY TNHH Thiện Hiền </span>
       </div>
 
       {/* Navigation */}

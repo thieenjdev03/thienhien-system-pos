@@ -3,7 +3,8 @@
  * Supports file upload or paste JSON, upsert or replace modes
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
+import { ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { vi } from '@/shared/i18n/vi';
 import { ProductImportItemSchema, type ProductImportItem } from '@/domain/schemas';
 import { productRepo, type ImportMode, type ImportResult } from '@/repos/productRepo';
@@ -45,6 +46,54 @@ const SAMPLE_JSON = [
   },
 ];
 
+const PRODUCT_PREVIEW_COLUMNS: ColumnDef<ProductImportItem>[] = [
+  {
+    id: 'index',
+    header: '#',
+    cell: ({ row }) => row.index + 1,
+  },
+  {
+    accessorKey: 'category',
+    header: vi.products.category,
+    cell: ({ getValue }) => {
+      const value = getValue() as string | null;
+      return value && value.trim().length > 0 ? value : '-';
+    },
+  },
+  {
+    accessorKey: 'name',
+    header: vi.products.name,
+  },
+  {
+    accessorKey: 'unit',
+    header: vi.products.unit,
+  },
+  {
+    accessorKey: 'price1',
+    header: vi.products.price1,
+    cell: ({ getValue }) => {
+      const value = getValue() as number | null;
+      return value !== null ? formatCurrency(value) : '-';
+    },
+  },
+  {
+    accessorKey: 'price2',
+    header: vi.products.price2,
+    cell: ({ getValue }) => {
+      const value = getValue() as number | null;
+      return value !== null ? formatCurrency(value) : '-';
+    },
+  },
+  {
+    accessorKey: 'price3',
+    header: vi.products.price3,
+    cell: ({ getValue }) => {
+      const value = getValue() as number | null;
+      return value !== null ? formatCurrency(value) : '-';
+    },
+  },
+];
+
 export function ImportProductsJsonModal({ onClose, onSuccess }: ImportProductsJsonModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [jsonText, setJsonText] = useState('');
@@ -53,6 +102,14 @@ export function ImportProductsJsonModal({ onClose, onSuccess }: ImportProductsJs
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const previewItems = useMemo(() => (parseResult ? parseResult.items.slice(0, 20) : []), [parseResult]);
+
+  const table = useReactTable({
+    data: previewItems,
+    columns: PRODUCT_PREVIEW_COLUMNS,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   /**
    * Parse JSON string and validate each item
@@ -307,26 +364,26 @@ export function ImportProductsJsonModal({ onClose, onSuccess }: ImportProductsJs
                   <div className="preview-table-wrapper">
                     <table className="preview-table">
                       <thead>
-                        <tr>
-                          <th>#</th>
-                          <th>{vi.products.category}</th>
-                          <th>{vi.products.name}</th>
-                          <th>{vi.products.unit}</th>
-                          <th>{vi.products.price1}</th>
-                          <th>{vi.products.price2}</th>
-                          <th>{vi.products.price3}</th>
-                        </tr>
+                        {table.getHeaderGroups().map((headerGroup) => (
+                          <tr key={headerGroup.id}>
+                            {headerGroup.headers.map((header) => (
+                              <th key={header.id}>
+                                {header.isPlaceholder
+                                  ? null
+                                  : flexRender(header.column.columnDef.header, header.getContext())}
+                              </th>
+                            ))}
+                          </tr>
+                        ))}
                       </thead>
                       <tbody>
-                        {parseResult.items.slice(0, 20).map((item, idx) => (
-                          <tr key={idx}>
-                            <td>{idx + 1}</td>
-                            <td>{item.category || '-'}</td>
-                            <td>{item.name}</td>
-                            <td>{item.unit}</td>
-                            <td>{item.price1 !== null ? formatCurrency(item.price1) : '-'}</td>
-                            <td>{item.price2 !== null ? formatCurrency(item.price2) : '-'}</td>
-                            <td>{item.price3 !== null ? formatCurrency(item.price3) : '-'}</td>
+                        {table.getRowModel().rows.map((row) => (
+                          <tr key={row.id}>
+                            {row.getVisibleCells().map((cell) => (
+                              <td key={cell.id}>
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>

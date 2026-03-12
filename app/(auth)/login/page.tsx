@@ -1,4 +1,4 @@
-"use client";
+\"use client\";
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -72,6 +72,10 @@ export default function LoginPage() {
     }
     setSubmitting(false);
   }, [pin, login, router]);
+
+  useEffect(() => {
+    document.title = 'Đăng nhập - POS Thiện Hiền';
+  }, []);
 
   // Keyboard support
   useEffect(() => {

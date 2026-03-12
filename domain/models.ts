@@ -122,6 +122,7 @@ export interface BackupData {
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
   counters: Counter[];
+  users: User[];
 }
 
 export interface BackupPayload {

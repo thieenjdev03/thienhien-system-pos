@@ -1,7 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/db';
-import { productRepo } from '@/repos/productRepo';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
 import { sortProducts, type SortField, type SortDirection } from '@/utils/sort';
 import { ProductForm } from './ProductForm';
@@ -9,10 +6,12 @@ import { ImportProductsJsonModal } from './ImportProductsJsonModal';
 import { vi } from '@/shared/i18n/vi';
 import type { Product, ProductInput } from '@/domain/models';
 import { cn } from '@/lib/utils';
+import { ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 
 // localStorage keys
 const STORAGE_KEY_SORT_FIELD = 'products_sort_field';
 const STORAGE_KEY_SORT_DIR = 'products_sort_dir';
+const PAGE_SIZE = 10;
 
 // Load sort preferences from localStorage
 function loadSortPreferences(): { field: SortField; dir: SortDirection } {
@@ -32,7 +31,17 @@ export function ProductsPage() {
   const [showForm, setShowForm] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
-  
+  const [rawProducts, setRawProducts] = useState<Product[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    document.title = 'Sản phẩm - POS Thiện Hiền';
+  }, []);
+
   // Sort state with localStorage persistence
   const [sortField, setSortField] = useState<SortField>(() => loadSortPreferences().field);
   const [sortDir, setSortDir] = useState<SortDirection>(() => loadSortPreferences().dir);
@@ -42,18 +51,63 @@ export function ProductsPage() {
     saveSortPreferences(sortField, sortDir);
   }, [sortField, sortDir]);
 
-  // Live query for products - reacts to DB changes
-  const rawProducts = useLiveQuery(async () => {
-    const term = search.trim().toLowerCase();
-    if (term) {
-      const all = await db.products.toArray();
-      return all.filter(p =>
-        p.name.toLowerCase().includes(term) ||
-        (p.category && p.category.toLowerCase().includes(term))
-      );
+  // Reset visible window when filters/sort change
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [search, sortField, sortDir]);
+
+  const fetchProducts = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) {
+        params.set('search', search.trim());
+      }
+      // Only active products for listing by default
+      params.set('active', 'true');
+      params.set('limit', '1000');
+
+      const res = await fetch(`/api/products?${params.toString()}`, {
+        method: 'GET',
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch products (${res.status})`);
+      }
+
+      const json = await res.json();
+      const apiProducts = (json?.data ?? []) as any[];
+
+      const mapped: Product[] = apiProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category ?? undefined,
+        unit: p.unit,
+        price1: p.price1 === null || p.price1 === undefined ? null : Number(p.price1),
+        price2: p.price2 === null || p.price2 === undefined ? null : Number(p.price2),
+        price3: p.price3 === null || p.price3 === undefined ? null : Number(p.price3),
+        note: p.note ?? undefined,
+        active: Boolean(p.active),
+        createdAt: new Date(p.createdAt).getTime(),
+        updatedAt: new Date(p.updatedAt).getTime(),
+        sourceId: p.sourceId ?? undefined,
+      }));
+
+      setRawProducts(mapped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : vi.validation.invalidValue);
+    } finally {
+      setIsLoading(false);
     }
-    return db.products.toArray();
   }, [search]);
+
+  // Fetch products from API whenever search changes
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   // Apply sorting to products
   const products = useMemo(() => {
@@ -83,6 +137,13 @@ export function ProductsPage() {
     return sortDir === 'asc' ? ' ▲' : ' ▼';
   };
 
+  const canLoadMore = !!products && visibleCount < products.length;
+
+  const loadMore = useCallback(() => {
+    if (!products) return;
+    setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, products.length));
+  }, [products]);
+
   const handleAdd = () => {
     setEditingProduct(undefined);
     setShowForm(true);
@@ -95,10 +156,44 @@ export function ProductsPage() {
 
   const handleSave = async (data: ProductInput) => {
     if (editingProduct) {
-      await productRepo.update(editingProduct.id, data);
+      await fetch(`/api/products/${editingProduct.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          category: data.category,
+          unit: data.unit,
+          price1: data.price1,
+          price2: data.price2,
+          price3: data.price3,
+          note: data.note,
+          active: data.active ?? true,
+        }),
+      });
     } else {
-      await productRepo.create(data);
+      await fetch('/api/products', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          category: data.category,
+          unit: data.unit,
+          price1: data.price1,
+          price2: data.price2,
+          price3: data.price3,
+          note: data.note,
+          active: data.active ?? true,
+          sourceId: data.sourceId,
+        }),
+      });
     }
+
+    // Reload from server
+    await fetchProducts();
     setShowForm(false);
     setEditingProduct(undefined);
   };
@@ -111,11 +206,43 @@ export function ProductsPage() {
   const handleToggleActive = async (product: Product) => {
     if (product.active) {
       if (window.confirm(vi.products.confirmDisable)) {
-        await productRepo.softDelete(product.id);
+        await fetch(`/api/products/${product.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: product.name,
+            category: product.category,
+            unit: product.unit,
+            price1: product.price1,
+            price2: product.price2,
+            price3: product.price3,
+            note: product.note,
+            active: false,
+          }),
+        });
       }
     } else {
-      await productRepo.restore(product.id);
+      await fetch(`/api/products/${product.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: product.name,
+          category: product.category,
+          unit: product.unit,
+          price1: product.price1,
+          price2: product.price2,
+          price3: product.price3,
+          note: product.note,
+          active: true,
+        }),
+      });
     }
+
+    await fetchProducts();
   };
 
   // Dashboard stats
@@ -148,6 +275,171 @@ export function ProductsPage() {
 
     return { total, active, inactive, categories, latestUpdatedAt };
   }, [products]);
+
+  const tableData = useMemo(() => {
+    if (!products) return [];
+    return products.slice(0, visibleCount);
+  }, [products, visibleCount]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    const sentinel = sentinelRef.current;
+    if (!root || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (!canLoadMore) return;
+        loadMore();
+      },
+      { root, rootMargin: '200px 0px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadMore, loadMore]);
+
+  const columns = useMemo<ColumnDef<Product>[]>(() => {
+    return [
+      {
+        id: 'index',
+        header: '#',
+        cell: ({ row }) => row.index + 1,
+      },
+      {
+        accessorKey: 'name',
+        header: () => (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1"
+            onClick={() => handleHeaderClick('name')}
+            title={
+              sortField === 'name'
+                ? sortDir === 'asc'
+                  ? vi.products.sortTooltipAsc
+                  : vi.products.sortTooltipDesc
+                : vi.products.sortTooltipAsc
+            }
+          >
+            {vi.products.name}
+            {getSortIndicator('name')}
+          </button>
+        ),
+        cell: ({ getValue }) => (getValue() as string) || '-',
+      },
+      {
+        accessorKey: 'category',
+        header: () => (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1"
+            onClick={() => handleHeaderClick('category')}
+            title={
+              sortField === 'category'
+                ? sortDir === 'asc'
+                  ? vi.products.sortTooltipAsc
+                  : vi.products.sortTooltipDesc
+                : vi.products.sortTooltipAsc
+            }
+          >
+            {vi.products.category}
+            {getSortIndicator('category')}
+          </button>
+        ),
+        cell: ({ getValue }) => {
+          const value = getValue() as string | undefined;
+          return value && value.trim().length > 0 ? value : '-';
+        },
+      },
+      {
+        accessorKey: 'unit',
+        header: vi.products.unit,
+        cell: ({ getValue }) => (getValue() as string) || '-',
+      },
+      {
+        accessorKey: 'price1',
+        header: vi.products.price1,
+        cell: ({ getValue }) => {
+          const value = getValue() as number | null | undefined;
+          return value !== null && value !== undefined ? formatCurrency(value) : '-';
+        },
+      },
+      {
+        accessorKey: 'price2',
+        header: vi.products.price2,
+        cell: ({ getValue }) => {
+          const value = getValue() as number | null | undefined;
+          return value !== null && value !== undefined ? formatCurrency(value) : '-';
+        },
+      },
+      {
+        accessorKey: 'price3',
+        header: vi.products.price3,
+        cell: ({ getValue }) => {
+          const value = getValue() as number | null | undefined;
+          return value !== null && value !== undefined ? formatCurrency(value) : '-';
+        },
+      },
+      {
+        accessorKey: 'note',
+        header: vi.products.note,
+        cell: ({ getValue }) => {
+          const value = getValue() as string | undefined;
+          return (
+            <span className="block truncate text-slate-600">
+              {value && value.trim().length > 0 ? value : '-'}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'active',
+        header: vi.products.status,
+        cell: ({ row }) => {
+          const isActive = row.original.active;
+          return (
+            <span
+              className={cn(
+                'inline-block rounded-2xl px-2 py-0.5 text-[0.7rem] font-medium',
+                isActive
+                  ? 'bg-green-100 text-green-600'
+                  : 'bg-slate-100 text-slate-400',
+              )}
+            >
+              {isActive ? vi.status.active : vi.status.inactive}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-2">
+            <button
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[0.7rem] font-medium uppercase tracking-wide text-slate-900 transition-colors hover:bg-slate-200"
+              onClick={() => handleEdit(row.original)}
+            >
+              {vi.actions.edit}
+            </button>
+            <button
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[0.7rem] font-medium uppercase tracking-wide text-slate-900 transition-colors hover:bg-slate-200"
+              onClick={() => handleToggleActive(row.original)}
+            >
+              {row.original.active ? vi.actions.disable : vi.actions.enable}
+            </button>
+          </div>
+        ),
+      },
+    ];
+  }, [handleHeaderClick, sortField, sortDir, loadMore, handleToggleActive]);
+
+  const table = useReactTable({
+    data: tableData,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   return (
     <div className="rounded-md border border-slate-200 bg-white p-6 shadow-sm">
@@ -210,20 +502,31 @@ export function ProductsPage() {
         </div>
       </div>
 
-      {/* Filters: search + sort */}
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex-1">
-          <input
-            type="text"
-            placeholder={vi.products.searchPlaceholder}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-md rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-0 transition-colors focus:border-blue-600"
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label htmlFor="sort-field" className="text-sm font-medium text-slate-600">
+
+      {/* Products table */}
+      <div
+        ref={scrollRef}
+        className="max-h-[560px] overflow-auto rounded-md border border-slate-200"
+      >
+        {error && (
+          <div className="px-3 py-2 text-sm text-red-600">
+            {error}
+          </div>
+        )}
+
+        {/* --- New filter layout --- */}
+        <div className="sticky top-0 z-10 mb-1 bg-white/95 backdrop-blur flex flex-col items-stretch gap-2 px-3 py-2 border-b border-slate-100 md:flex-row md:items-center md:gap-4">
+          <div className="flex-1 flex items-center gap-2">
+            <input
+              type="text"
+              placeholder={vi.products.searchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-0 transition-colors focus:border-blue-600"
+            />
+          </div>
+          <div className="flex flex-row items-center gap-2 flex-1">
+            <label htmlFor="sort-field" className="text-sm font-medium text-slate-600 shrink-0">
               {vi.products.sortBy}:
             </label>
             <select
@@ -236,9 +539,7 @@ export function ProductsPage() {
               <option value="category">{vi.products.sortByCategory}</option>
               <option value="updatedAt">{vi.products.sortByUpdatedAt}</option>
             </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label htmlFor="sort-dir" className="text-sm font-medium text-slate-600">
+            <label htmlFor="sort-dir" className="text-sm font-medium text-slate-600 shrink-0 ml-2">
               {vi.products.sortOrder}:
             </label>
             <select
@@ -252,140 +553,93 @@ export function ProductsPage() {
             </select>
           </div>
         </div>
-      </div>
+        {/* --- End new filter layout --- */}
 
-      {/* Products table */}
-      <div className="overflow-x-auto">
         <table className="mt-2 w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-100 text-[0.7rem] font-semibold uppercase tracking-wide text-slate-500">
-              <th
-                className="cursor-pointer border-b border-slate-200 px-3 py-2 text-left"
-                onClick={() => handleHeaderClick('name')}
-                title={
-                  sortField === 'name'
-                    ? sortDir === 'asc'
-                      ? vi.products.sortTooltipAsc
-                      : vi.products.sortTooltipDesc
-                    : vi.products.sortTooltipAsc
-                }
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr
+                key={headerGroup.id}
+                className="bg-slate-100 text-[0.7rem] font-semibold uppercase tracking-wide text-slate-500"
               >
-                {vi.products.name}
-                {getSortIndicator('name')}
-              </th>
-              <th
-                className="cursor-pointer border-b border-slate-200 px-3 py-2 text-left"
-                onClick={() => handleHeaderClick('category')}
-                title={
-                  sortField === 'category'
-                    ? sortDir === 'asc'
-                      ? vi.products.sortTooltipAsc
-                      : vi.products.sortTooltipDesc
-                    : vi.products.sortTooltipAsc
-                }
-              >
-                {vi.products.category}
-                {getSortIndicator('category')}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.products.unit}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.products.price1}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.products.price2}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.products.price3}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.products.note}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.products.status}
-              </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-right"></th>
-            </tr>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className={cn(
+                      'border-b border-slate-200 px-3 py-2 text-left',
+                      header.column.id === 'actions' && 'text-right',
+                    )}
+                  >
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                  </th>
+                ))}
+              </tr>
+            ))}
           </thead>
           <tbody>
             {!products || products.length === 0 ? (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={columns.length}
                   className="px-3 py-10 text-center text-sm text-slate-400"
                 >
                   {search ? vi.products.emptySearch : vi.products.emptyState}
                 </td>
               </tr>
             ) : (
-              products.map((product) => (
+              table.getRowModel().rows.map((row) => (
                 <tr
-                  key={product.id}
+                  key={row.id}
                   className={cn(
                     'border-b border-slate-100',
-                    !product.active && 'opacity-60',
+                    !row.original.active && 'opacity-60',
                   )}
                 >
-                  <td className="px-3 py-2 align-middle">{product.name}</td>
-                  <td className="px-3 py-2 align-middle">
-                    {product.category || '-'}
-                  </td>
-                  <td className="px-3 py-2 align-middle">{product.unit}</td>
-                  <td className="px-3 py-2 align-middle">
-                    {product.price1 !== null
-                      ? formatCurrency(product.price1)
-                      : '-'}
-                  </td>
-                  <td className="px-3 py-2 align-middle">
-                    {product.price2 !== null
-                      ? formatCurrency(product.price2)
-                      : '-'}
-                  </td>
-                  <td className="px-3 py-2 align-middle">
-                    {product.price3 !== null
-                      ? formatCurrency(product.price3)
-                      : '-'}
-                  </td>
-                  <td className="max-w-xs px-3 py-2 align-middle">
-                    <span className="block truncate text-slate-600">
-                      {product.note || '-'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 align-middle">
-                    <span
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
                       className={cn(
-                        'inline-block rounded-2xl px-2 py-0.5 text-[0.7rem] font-medium',
-                        product.active
-                          ? 'bg-green-100 text-green-600'
-                          : 'bg-slate-100 text-slate-400',
+                        'px-3 py-2 align-middle',
+                        cell.column.id === 'actions' && 'text-right',
+                        cell.column.id === 'note' && 'max-w-xs',
                       )}
                     >
-                      {product.active ? vi.status.active : vi.status.inactive}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right align-middle">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[0.7rem] font-medium uppercase tracking-wide text-slate-900 transition-colors hover:bg-slate-200"
-                        onClick={() => handleEdit(product)}
-                      >
-                        {vi.actions.edit}
-                      </button>
-                      <button
-                        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[0.7rem] font-medium uppercase tracking-wide text-slate-900 transition-colors hover:bg-slate-200"
-                        onClick={() => handleToggleActive(product)}
-                      >
-                        {product.active ? vi.actions.disable : vi.actions.enable}
-                      </button>
-                    </div>
-                  </td>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))
             )}
           </tbody>
         </table>
+
+        <div ref={sentinelRef} className="h-10" />
       </div>
+
+      {products && products.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <span>
+            Showing {Math.min(visibleCount, products.length)} / {products.length}
+          </span>
+          {canLoadMore && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={loadMore}
+            >
+              Load more
+            </button>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <ProductForm

@@ -1,10 +1,8 @@
 'use client';
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/db';
 import { invoiceRepo } from '@/repos/invoiceRepo';
 import { ProductSearchAddPanel } from '@/components/ProductSearchAddPanel';
 import { vi } from '@/shared/i18n/vi';
@@ -16,23 +14,71 @@ import { PriceTierSwitch } from './components/PriceTierSwitch';
 import { CartTable } from './components/CartTable';
 import { PaymentSummary } from './components/PaymentSummary';
 import { ToastContainer, showToast } from './components/Toast';
+import { PrintableInvoice, mapCartLinesToPrintableLines } from '@/components/PrintableInvoice';
+
+// Font Awesome black & white (regular/solid/brands for full icon set)
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
+import '@fortawesome/fontawesome-free/css/solid.min.css';
+import '@fortawesome/fontawesome-free/css/regular.min.css';
+import '@fortawesome/fontawesome-free/css/brands.min.css';
 
 export default function InvoiceNewPage() {
   const router = useRouter();
   const productSearchInputRef = useRef<HTMLInputElement>(null);
   const form = useInvoiceForm();
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'vietqr' | 'debt'>('cash');
+  const [lastInvoiceId, setLastInvoiceId] = useState<string | null>(null);
 
-  // Customer search query (kept from original page logic)
-  const customers = useLiveQuery(async () => {
-    const term = form.customerSearch.trim().toLowerCase();
-    if (!term) {
-      return db.customers.orderBy('name').limit(10).toArray();
-    }
-    const all = await db.customers.toArray();
-    return all.filter(c =>
-      c.name.toLowerCase().includes(term) ||
-      (c.phone && c.phone.includes(term))
-    ).slice(0, 10);
+  // Customer search results from API (Prisma)
+  const [customers, setCustomers] = useState<Customer[] | undefined>(undefined);
+
+  useEffect(() => {
+    document.title = 'Tạo hóa đơn mới - POS Thiện Hiền';
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchCustomers = async () => {
+      try {
+        const params = new URLSearchParams();
+        const term = form.customerSearch.trim();
+        if (term) {
+          params.set('search', term);
+        }
+        params.set('limit', '10');
+
+        const res = await fetch(`/api/customers?${params.toString()}`, {
+          method: 'GET',
+        });
+        if (!res.ok) return;
+
+        const json = await res.json();
+        const apiCustomers = (json?.data ?? []) as any[];
+        const mapped: Customer[] = apiCustomers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone ?? undefined,
+          address: c.address ?? undefined,
+          note: c.note ?? undefined,
+          debt: Number(c.debt ?? 0),
+          createdAt: new Date(c.createdAt).getTime(),
+          updatedAt: new Date(c.updatedAt).getTime(),
+        }));
+
+        if (!cancelled) {
+          setCustomers(mapped);
+        }
+      } catch {
+        // swallow errors for dropdown
+      }
+    };
+
+    fetchCustomers();
+
+    return () => {
+      cancelled = true;
+    };
   }, [form.customerSearch]);
 
   // Handle add to cart + focus qty
@@ -73,6 +119,7 @@ export default function InvoiceNewPage() {
       });
 
       showToast(`Đã tạo hoá đơn ${invoice.invoiceNo}`);
+      setLastInvoiceId(invoice.id);
       form.resetForm();
       productSearchInputRef.current?.focus();
     } catch (err) {
@@ -118,41 +165,60 @@ export default function InvoiceNewPage() {
   };
 
   return (
-    <div className="invoice-new-layout">
-      {/* LEFT COLUMN */}
-      <div className="invoice-left-column">
+    <>
+      <div className="invoice-new-layout">
+        {/* LEFT COLUMN */}
+        <div className="invoice-left-column">
         <div className="invoice-header">
-          <h2>Tạo hóa đơn mới</h2>
-          <Link href="/invoices" className="btn btn-secondary">Hủy</Link>
+          <h2>
+            <i className="fa fa-file-invoice-dollar" style={{ marginRight: 8 }} /> Tạo hóa đơn mới
+          </h2>
+          <Link href="/invoices" className="btn btn-secondary">
+            <i className="fa fa-xmark" style={{ marginRight: 6 }} /> Hủy
+          </Link>
         </div>
 
-        {form.error && <div className="form-error">{form.error}</div>}
+        {form.error && (
+          <div className="form-error">
+            <i className="fa fa-triangle-exclamation" style={{ marginRight: 6, color: '#e74c3c' }} /> {form.error}
+          </div>
+        )}
 
         {/* Customer Section */}
         <section className="invoice-section">
-          <h3>Khách hàng</h3>
+          <h3>
+            <i className="fa fa-user-group" style={{ marginRight: 5 }} /> Khách hàng
+          </h3>
 
           {form.customer ? (
             <div className="customer-card">
               <div className="customer-card-info">
                 <div className="customer-card-name">
-                  <span className="customer-icon">👤</span>
+                  <span className="customer-icon">
+                    <i className="fa fa-user" aria-hidden="true" />
+                  </span>
                   {form.customer.name}
                 </div>
                 {form.customer.phone && (
                   <div className="customer-card-detail">
-                    <span className="detail-icon">📞</span>
+                    <span className="detail-icon">
+                      <i className="fa fa-phone" aria-hidden="true" />
+                    </span>
                     {form.customer.phone}
                   </div>
                 )}
                 {form.customer.address && (
                   <div className="customer-card-detail">
-                    <span className="detail-icon">📍</span>
+                    <span className="detail-icon">
+                      <i className="fa fa-location-dot" aria-hidden="true" />
+                    </span>
                     {form.customer.address}
                   </div>
                 )}
                 <div className={`customer-card-debt ${form.customer.debt > 0 ? 'has-debt' : ''}`}>
-                  <span className="detail-icon">💳</span>
+                  <span className="detail-icon">
+                    <i className="fa fa-credit-card" aria-hidden="true" />
+                  </span>
                   Công nợ hiện tại: {formatCurrency(form.customer.debt)}
                 </div>
               </div>
@@ -161,7 +227,7 @@ export default function InvoiceNewPage() {
                 className="btn btn-sm btn-secondary"
                 onClick={handleClearCustomer}
               >
-                Đổi khách
+                <i className="fa fa-right-left" style={{ marginRight: 6 }} /> Đổi khách
               </button>
             </div>
           ) : (
@@ -182,7 +248,9 @@ export default function InvoiceNewPage() {
                     className="customer-search-item walk-in"
                     onClick={() => handleSelectCustomer(null)}
                   >
-                    <strong>Bán lẻ</strong>
+                    <strong>
+                      <i className="fa fa-store" style={{ marginRight: 5 }} /> Bán lẻ
+                    </strong>
                     <span className="text-muted">(Khách vãng lai)</span>
                   </div>
                   {customers && customers.map((customer) => (
@@ -192,13 +260,17 @@ export default function InvoiceNewPage() {
                       onClick={() => handleSelectCustomer(customer)}
                     >
                       <div>
-                        <strong>{customer.name}</strong>
+                        <strong>
+                          <i className="fa fa-user" style={{ marginRight: 5 }} />
+                          {customer.name}
+                        </strong>
                         {customer.phone && (
                           <span className="text-muted"> - {customer.phone}</span>
                         )}
                       </div>
                       {customer.debt > 0 && (
                         <span className="debt-badge">
+                          <i className="fa fa-money-bill-wave" style={{ marginRight: 2 }} />
                           Nợ: {formatCurrency(customer.debt)}
                         </span>
                       )}
@@ -212,7 +284,9 @@ export default function InvoiceNewPage() {
 
         {/* Price Tier & Search */}
         <section className="invoice-section">
-          <h3>Sản phẩm</h3>
+          <h3>
+            <i className="fa fa-boxes-stacked" style={{ marginRight: 5 }} /> Sản phẩm
+          </h3>
           <PriceTierSwitch
             value={form.priceTier}
             onChange={form.changePriceTier}
@@ -228,7 +302,10 @@ export default function InvoiceNewPage() {
 
         {/* Cart */}
         <section className="invoice-section cart-section">
-          <h3>Giỏ hàng ({form.cartLines.length})</h3>
+          <h3>
+            <i className="fa fa-cart-shopping" style={{ marginRight: 5 }} />
+            Giỏ hàng ({form.cartLines.length})
+          </h3>
           <CartTable
             lines={form.cartLines}
             onUpdateQty={form.updateQty}
@@ -241,7 +318,9 @@ export default function InvoiceNewPage() {
 
         {/* Note */}
         <section className="invoice-section">
-          <h3>Ghi chú</h3>
+          <h3>
+            <i className="fa fa-note-sticky" style={{ marginRight: 5 }} /> Ghi chú
+          </h3>
           <textarea
             className="invoice-note"
             value={form.note}
@@ -270,10 +349,36 @@ export default function InvoiceNewPage() {
           onDiscountModeChange={form.setDiscountMode}
           onPaidChange={form.setPaid}
           onSave={handleSave}
+          invoiceId={lastInvoiceId ?? undefined}
+          paymentMethod={paymentMethod}
+          onPaymentMethodChange={setPaymentMethod}
         />
       </div>
 
       <ToastContainer />
-    </div>
+      </div>
+
+      {/* Hidden printable layout for window.print() */}
+      <div className="hidden print:block">
+        <PrintableInvoice
+          storeName="CTY TNHH Thiện Hiền"
+          storeAddress="Địa chỉ cập nhật sau"
+          storePhone=""
+          storeTaxCode={undefined}
+          createdAt={new Date()}
+          cashierName={null}
+          paymentMethodLabel={null}
+          invoiceNo={lastInvoiceId ?? 'TẠM IN'}
+          customer={form.customer}
+          lines={mapCartLinesToPrintableLines(form.cartLines)}
+          subtotal={form.subtotal}
+          discount={form.discountAmount}
+          total={form.total}
+          paid={form.paid}
+          change={form.paid - form.total}
+          qrValue={''}
+        />
+      </div>
+    </>
   );
 }

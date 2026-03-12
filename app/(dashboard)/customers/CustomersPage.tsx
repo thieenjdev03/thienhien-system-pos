@@ -1,9 +1,6 @@
-"use client";
+'use client';
 
-import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/db';
-import { customerRepo } from '@/repos/customerRepo';
+import { useCallback, useEffect, useState } from 'react';
 import { formatCurrency } from '@/utils/formatters';
 import { CustomerForm } from './CustomerForm';
 import { vi } from '@/shared/i18n/vi';
@@ -13,19 +10,58 @@ export function CustomersPage() {
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | undefined>();
+  const [customers, setCustomers] = useState<Customer[] | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Live query for customers - reacts to DB changes
-  const customers = useLiveQuery(async () => {
-    const term = search.trim().toLowerCase();
-    if (term) {
-      const all = await db.customers.orderBy('createdAt').reverse().toArray();
-      return all.filter(c =>
-        c.name.toLowerCase().includes(term) ||
-        (c.phone && c.phone.includes(term))
-      );
+  useEffect(() => {
+    document.title = 'Khách hàng - POS Thiện Hiền';
+  }, []);
+
+  const fetchCustomers = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) {
+        params.set('search', search.trim());
+      }
+      params.set('limit', '500');
+
+      const res = await fetch(`/api/customers?${params.toString()}`, {
+        method: 'GET',
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch customers (${res.status})`);
+      }
+
+      const json = await res.json();
+      const apiCustomers = (json?.data ?? []) as any[];
+
+      const mapped: Customer[] = apiCustomers.map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone ?? undefined,
+        address: c.address ?? undefined,
+        note: c.note ?? undefined,
+        debt: Number(c.debt ?? 0),
+        createdAt: new Date(c.createdAt).getTime(),
+        updatedAt: new Date(c.updatedAt).getTime(),
+      }));
+
+      setCustomers(mapped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : vi.validation.invalidValue);
+    } finally {
+      setIsLoading(false);
     }
-    return db.customers.orderBy('createdAt').reverse().toArray();
   }, [search]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   const handleAdd = () => {
     setEditingCustomer(undefined);
@@ -39,10 +75,36 @@ export function CustomersPage() {
 
   const handleSave = async (data: CustomerInput) => {
     if (editingCustomer) {
-      await customerRepo.update(editingCustomer.id, data);
+      await fetch(`/api/customers/${editingCustomer.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          address: data.address,
+          note: data.note,
+          debt: data.debt ?? 0,
+        }),
+      });
     } else {
-      await customerRepo.create(data);
+      await fetch('/api/customers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          address: data.address,
+          note: data.note,
+          debt: data.debt ?? 0,
+        }),
+      });
     }
+
+    await fetchCustomers();
     setShowForm(false);
     setEditingCustomer(undefined);
   };
@@ -54,7 +116,10 @@ export function CustomersPage() {
 
   const handleDelete = async (customer: Customer) => {
     if (window.confirm(vi.customers.confirmDelete)) {
-      await customerRepo.delete(customer.id);
+      await fetch(`/api/customers/${customer.id}`, {
+        method: 'DELETE',
+      });
+      await fetchCustomers();
     }
   };
 
@@ -75,6 +140,12 @@ export function CustomersPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {error && (
+        <div className="mb-2 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       <table className="data-table">
         <thead>

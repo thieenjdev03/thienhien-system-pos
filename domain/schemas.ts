@@ -69,11 +69,11 @@ export const CounterSchema = z.object({
 });
 
 // ============================================
-// Backup Payload Schema (v1)
+// Backup Payload Schema (v1/v2)
 // ============================================
 
 export const BackupMetaSchema = z.object({
-  version: z.literal(1), // only version 1 supported
+  version: z.union([z.literal(1), z.literal(2)]),
   exportedAt: z.string().datetime(),
   appName: z.literal('POS-MVP'),
 });
@@ -84,6 +84,21 @@ export const BackupDataSchema = z.object({
   invoices: z.array(InvoiceSchema),
   invoiceItems: z.array(InvoiceItemSchema),
   counters: z.array(CounterSchema),
+  // v2+: include users (missing in v1 payloads)
+  users: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        pinHash: z.string().min(1),
+        displayName: z.string().min(1),
+        role: z.enum(['admin', 'cashier']),
+        active: z.boolean(),
+        createdAt: z.number(),
+        updatedAt: z.number(),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
 export const BackupPayloadSchema = z.object({

@@ -1,7 +1,13 @@
 import Link from 'next/link';
+import { useEffect } from 'react';
 import { Globe } from '@/components/ui/globe';
 import { vi } from '@/shared/i18n/vi';
+
 export default function Home() {
+  useEffect(() => {
+    document.title = 'Dashboard - POS Thiện Hiền';
+  }, []);
+
   return (
       <div className="page">
       <h2>{vi.dashboard}</h2>
