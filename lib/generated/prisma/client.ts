@@ -22,6 +22,7 @@ import * as Prisma from "./internal/prismaNamespace"
 
 export * as $Enums from './enums'
 export * from "./enums"
+
 /**
  * ## Prisma Client
  * 
