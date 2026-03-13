@@ -84,9 +84,6 @@ export function PaymentSummary({
   paymentMethod,
   onPaymentMethodChange,
 }: PaymentSummaryProps) {
-  const isOwing = remaining > 0;
-  const changeAmount = Math.abs(remaining);
-
   const qrUrl = useMemo(() => {
     if (paymentMethod !== 'vietqr') return null;
     const addInfo = invoiceId || 'HOA DON TAM TINH' + ' - ' + new Date().toLocaleDateString('vi-VN');
@@ -224,19 +221,6 @@ export function PaymentSummary({
                 placeholder="0"
               />
             </div>
-            {paid > 0 && (
-              <div
-                className={cn(
-                  'flex items-center justify-between',
-                  isOwing ? 'text-amber-600' : 'text-emerald-600',
-                )}
-              >
-                <span>{isOwing ? 'Còn thiếu' : 'Tiền thừa'}</span>
-                <span className="font-semibold">
-                  {formatCurrency(changeAmount)}
-                </span>
-              </div>
-            )}
           </>
         )}
 
@@ -278,18 +262,6 @@ export function PaymentSummary({
           </div>
         )}
 
-        {/* Debt warning from remaining (for mixed flows) */}
-        {hasDebt && hasCustomer && paymentMethod !== 'debt' && (
-          <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            <span className="mr-1">
-              <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-            </span>
-            Còn thiếu:&nbsp;
-            <span className="font-semibold">
-              {formatCurrency(remaining)}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Save / Print Buttons */}

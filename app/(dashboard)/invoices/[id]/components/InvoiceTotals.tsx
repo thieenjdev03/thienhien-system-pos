@@ -13,9 +13,6 @@ export function InvoiceTotals({ invoice }: InvoiceTotalsProps) {
   // Logic: if change is negative, it means paid < total, so it's debt increase/remaining
   // We want to show POSITIVE numbers with correct labels
   
-  const isOwing = invoice.change < 0;
-  const changeAmount = Math.abs(invoice.change);
-  
   return (
     <div className="flex flex-col gap-3 max-w-sm ml-auto">
       {/* Subtotal */}
@@ -38,33 +35,6 @@ export function InvoiceTotals({ invoice }: InvoiceTotalsProps) {
         <span className="text-xl font-bold text-blue-600">{formatCurrency(invoice.total)}</span>
       </div>
 
-      {/* Paid */}
-      <div className="flex justify-between items-center text-sm">
-        <span className="text-slate-500">{vi.invoices.paid}:</span>
-        <span className="font-medium text-slate-900">{formatCurrency(invoice.paid)}</span>
-      </div>
-
-      {/* Change / Owing */}
-      <div className="flex justify-between items-center text-sm">
-        <span className={`font-medium ${isOwing ? 'text-red-500' : 'text-slate-500'}`}>
-          {isOwing ? vi.invoices.owing : vi.invoices.change}:
-        </span>
-        <span className={`font-bold ${isOwing ? 'text-red-600' : 'text-green-600'}`}>
-          {formatCurrency(changeAmount)}
-        </span>
-      </div>
-
-      {/* Debt Warning (if applicable) */}
-      {invoice.debtIncrease > 0 && (
-         <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm">
-            <div className="flex justify-between items-center">
-               <span className="font-medium text-red-600 flex items-center gap-1">
-                  <span>⚠️</span> {vi.invoices.debtIncrease}:
-               </span>
-               <span className="font-bold text-red-700">{formatCurrency(invoice.debtIncrease)}</span>
-            </div>
-         </div>
-      )}
     </div>
   );
 }

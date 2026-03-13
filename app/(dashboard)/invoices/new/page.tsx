@@ -4,6 +4,7 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { invoiceRepo } from '@/repos/invoiceRepo';
+import { db } from '@/db';
 import { ProductSearchAddPanel } from '@/components/ProductSearchAddPanel';
 import { vi } from '@/shared/i18n/vi';
 import { formatCurrency } from '@/utils/formatters';
@@ -56,7 +57,7 @@ export default function InvoiceNewPage() {
         const json = await res.json();
         const apiCustomers = (json?.data ?? []) as any[];
         const mapped: Customer[] = apiCustomers.map((c) => ({
-          id: c.id,
+          id: String(c.id),
           name: c.name,
           phone: c.phone ?? undefined,
           address: c.address ?? undefined,
@@ -65,6 +66,9 @@ export default function InvoiceNewPage() {
           createdAt: new Date(c.createdAt).getTime(),
           updatedAt: new Date(c.updatedAt).getTime(),
         }));
+
+        // Đồng bộ khách hàng từ API vào Dexie để đảm bảo invoice.customerId trỏ đúng bản ghi local
+        await db.customers.bulkPut(mapped);
 
         if (!cancelled) {
           setCustomers(mapped);

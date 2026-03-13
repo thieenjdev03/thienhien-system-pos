@@ -75,7 +75,6 @@ app/(dashboard)/invoices/new/
 - [ ] Tier change prompts confirmation for existing cart
 - [ ] Custom price shows badge + reset button
 - [ ] Qty=0 removes with toast+undo
-- [ ] "Còn thiếu" / "Tiền thừa" labels (no negative numbers)
 - [ ] Discount toggle: amount vs %
 - [ ] CTA changes based on debt state
 - [ ] Toast on save success

@@ -28,7 +28,6 @@
 - Discount: toggle between amount/% mode, capped at subtotal
 - Total (bold)
 - Cash received input
-- "Còn thiếu: X" if cash < total, "Tiền thừa: Y" if cash >= total
 - Debt warning: only when customer selected + cash < total
 - CTA: "LƯU HOÁ ĐƠN" or "LƯU HOÁ ĐƠN (CÔNG NỢ)"
 
@@ -244,9 +243,6 @@ export function PaymentSummary({
         {/* Change / Remaining */}
         {paid > 0 && (
           <div className={cn('payment-row', isOwing ? 'payment-owing' : 'payment-change positive')}>
-            <span className="payment-label">
-              {isOwing ? 'Còn thiếu:' : 'Tiền thừa:'}
-            </span>
             <span className="payment-value">
               {formatCurrency(changeAmount)}
             </span>
@@ -383,7 +379,6 @@ export function PaymentSummary({
 - [ ] Toast shows on save success with invoice number
 - [ ] Discount toggles between ₫ and % modes
 - [ ] Discount capped at subtotal
-- [ ] "Còn thiếu" shows when cash < total
 - [ ] "Tiền thừa" shows when cash >= total
 - [ ] No negative numbers displayed anywhere
 - [ ] Debt warning only when customer selected + cash < total

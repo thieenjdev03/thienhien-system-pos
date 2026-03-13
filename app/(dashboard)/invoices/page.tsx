@@ -78,9 +78,6 @@ export default function InvoicesPage() {
               <th className="border-b border-slate-200 px-3 py-2 text-left">
                 {vi.invoices.change}
               </th>
-              <th className="border-b border-slate-200 px-3 py-2 text-left">
-                {vi.invoices.debtIncrease}
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -120,16 +117,6 @@ export default function InvoicesPage() {
                     )}
                   >
                     {formatCurrency(invoice.change)}
-                  </td>
-                  <td
-                    className={cn(
-                      'px-3 py-2 align-middle',
-                      invoice.debtIncrease > 0 && 'text-red-600',
-                    )}
-                  >
-                    {invoice.debtIncrease > 0
-                      ? formatCurrency(invoice.debtIncrease)
-                      : '-'}
                   </td>
                 </tr>
               ))

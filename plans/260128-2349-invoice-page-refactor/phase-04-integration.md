@@ -227,7 +227,6 @@ invoices: {
   resetToTier: 'Reset về giá tier',
   itemRemoved: 'Đã xoá',
   undo: 'Hoàn tác',
-  owing: 'Còn thiếu',
   change: 'Tiền thừa',
   discountAmount: 'Giảm tiền',
   discountPercent: 'Giảm %',
@@ -253,7 +252,6 @@ invoices: {
 - [ ] Remove item → toast with undo
 - [ ] Save → toast with invoice number + reset form + focus search
 - [ ] Discount ₫/% toggle works
-- [ ] "Còn thiếu" / "Tiền thừa" labels correct
 - [ ] Ctrl+K focuses search, Ctrl+Enter saves
 - [ ] No console errors
 - [ ] page.tsx under 200 lines
